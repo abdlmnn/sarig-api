@@ -48,3 +48,6 @@ pip-wheel-metadata/
 *.swo
 .DS_Store
 Thumbs.db
+
+# --- Local Working Kit (do not publish) ---
+kit/
