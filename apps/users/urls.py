@@ -26,6 +26,11 @@ urlpatterns = [
     name="token_refresh"
   ),
   path(
+    "me/",
+    MeView.as_view(),
+    name="me"
+  ),
+  path(
     "",
     include(router.urls)
   ),
