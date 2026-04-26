@@ -1,2 +1,50 @@
-.venv/
+# --- Secrets / Environment ---
 .env
+.env.*
+!.env.example
+!.env.production.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.so
+.Python
+
+# --- Virtual Environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Django ---
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+*.log
+media/
+staticfiles/
+
+# --- Testing / Coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Build / Packaging ---
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
