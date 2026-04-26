@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -8,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
 
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
 DEBUG = os.getenv("DEBUG", "0").lower() in {"1", "true", "yes", "on"}
 ALLOWED_HOSTS = [
     host.strip()
@@ -25,6 +26,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "apps.users.apps.UsersConfig",
 ]
@@ -100,6 +102,23 @@ REST_FRAMEWORK = {
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.NamespaceVersioning",
     "DEFAULT_VERSION": "v1",
     "ALLOWED_VERSIONS": ["v1", "v2"],
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=int(os.getenv("JWT_ACCESS_MINUTES", "5"))
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=int(os.getenv("JWT_REFRESH_DAYS", "1"))
+    ),
+    "ROTATE_REFRESH_TOKENS": os.getenv("JWT_ROTATE_REFRESH_TOKENS", "1").lower()
+    in {"1", "true", "yes", "on"},
+    "BLACKLIST_AFTER_ROTATION": os.getenv(
+        "JWT_BLACKLIST_AFTER_ROTATION", "1"
+    ).lower() in {"1", "true", "yes", "on"},
+    "ALGORITHM": os.getenv("JWT_ALGORITHM", "HS256"),
+    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
+    "AUTH_HEADER_TYPES": (os.getenv("JWT_AUTH_HEADER_TYPE", "Bearer"),),
 }
 
 
