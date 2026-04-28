@@ -9,7 +9,7 @@ from rest_framework.views import (
 )
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import (
   UserRegisterSerializer,
@@ -95,7 +95,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 
   def perform_create(self, serializer):
     if hasattr(self.request.user, 'profile'):
-      raise serializers.ValidationError('Profile already exists.')
+      raise ValidationError('Profile already exists.')
     serializer.save(user=self.request.user)
 
   @action(
