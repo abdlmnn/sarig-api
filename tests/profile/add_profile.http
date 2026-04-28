@@ -1,0 +1,10 @@
+@access=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3MzY1MjY2LCJpYXQiOjE3NzczNjM0NjYsImp0aSI6IjIzZmRhMWQyMGJjNjQyYTg4M2RiOTRlZGRlNGVlNWEwIiwidXNlcl9pZCI6IjIifQ.Pc4yc8n34tjhm1vjtK5_bmEUT6uuCLLlos760zmg0Is
+
+POST http://127.0.0.1:8000/api/v1/users/profiles/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "role": 1,
+  "verification_status": "pending"
+}
