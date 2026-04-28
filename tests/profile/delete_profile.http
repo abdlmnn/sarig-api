@@ -1,0 +1,4 @@
+@access=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3MzYzMjU3LCJpYXQiOjE3NzczNjE0NTcsImp0aSI6ImNiYTFjNjI3OTkzYTRjNDFhMTk2YTg4MmQxNWIyY2M2IiwidXNlcl9pZCI6IjIifQ.74Y9LqgtdCziuEIGIbJ_NcmDL8nqhJAoVMoR5MYutho
+
+DELETE http://127.0.0.1:8000/api/v1/users/profiles/2/
+Authorization: Bearer {{access}}
