@@ -5,6 +5,7 @@ from rest_framework import (
 )
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from .serializers import (
   UserRegisterSerializer,
   UserSerializer,
@@ -39,7 +40,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     qs = super().get_queryset()
 
     role = self.request.query_params.get('role')
-    baranagay = self.request.query_params.get('barangay')
+    barangay = self.request.query_params.get('barangay')
     verification = self.request.query_params.get('verification_status')
 
     if role:
@@ -64,7 +65,10 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     permission_classes=[permissions.IsAuthenticated]
   )
   def me(self, request):
-    profile = request.user.profile
+    try:
+      profile = request.user.profile
+    except UserProfile.DoesNotExist:
+      raise NotFound('User profile does not exist.')
     serializer = self.get_serializer(profile)
     return Response(serializer.data)
 
