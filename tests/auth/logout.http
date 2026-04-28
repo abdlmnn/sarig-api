@@ -1,0 +1,11 @@
+@refresh=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc3NzQ3NjI2MywiaWF0IjoxNzc3Mzg5ODYzLCJqdGkiOiIxNWRjMmJlOWU1NWI0Njc0OTJhOTc0ODU0NTMxYzY3NyIsInVzZXJfaWQiOiIyIn0.QxiHUSP7iwTi1rIug9OlICBOU_MB44Utn1-RLA3j9E0
+
+@access=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3MzkxNjYzLCJpYXQiOjE3NzczODk4NjMsImp0aSI6Ijk0MWU1ZjJlZDU2ZDRkNjFhMWYzMDI3MjI4MTdjN2FiIiwidXNlcl9pZCI6IjIifQ.HN8PwSLQDJNJpr_yj465Riwi9_alVLePO51lbDSk_xA
+
+POST http://127.0.0.1:8000/api/v1/users/logout/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "refresh": "{{refresh}}"
+}
