@@ -93,45 +93,51 @@ class ApplicationViewSet(viewsets.ReadOnlyModelViewSet):
   permission_classes = [permissions.IsAuthenticated]
 
   def get_queryset(self):
-    profile = self.request.user.profile
+    try:
+      profile = self.request.user.profile
+    except UserProfile.DoesNotExsit:
+      raise NotFound('User profile does not exist.')
+
     role = profile.role
+
     if role == 1:
       return Application.objects.filter(seeker=profile).select_related("job", "seeker")
     return Application.objects.filter(job__employer=profile).select_related("job", "seeker")
 
-    @action(
-      detail=True,
-      methods=["patch"],
-      permission_classes=[IsEmployer]
-    )
-    def set_status(self, request, pk=None):
-      app = self.get_object()
-      if app.job.employer_id != request.user.profile.id:
-        return Response(
-          {"detail": "Not allowed."},
-          status=status.HTTP_403_FORBIDDEN
-        )
+  @action(
+    detail=True,
+    methods=["patch"],
+    # permission_classes=[IsEmployer]
+  )
+  def set_status(self, request, pk=None):
+    app = self.get_object()
 
-      try:
-        new_status = int(request.data.get("status"))
-      except (TypeError, ValueError):
+    # if app.job.employer_id != request.user.profile.id:
+    #   return Response(
+    #     {"detail": "Not allowed."},
+    #     status=status.HTTP_403_FORBIDDEN
+    #   )
+
+    try:
+      new_status = int(request.data.get("status"))
+    except (TypeError, ValueError):
+      return Response(
+        {"detail": "status must be an integer."},
+        status=status.HTTP_400_BAD_REQUEST
+      )
+
+    valid_statuses = {choice[0] for choice in Application.Status.choices}
+
+    if new_status not in valid_statuses:
         return Response(
-          {"detail": "status must be an integer."},
+          {"detail": "Invalid status value."},
           status=status.HTTP_400_BAD_REQUEST
         )
 
-      valid_statuses = {choice[0] for choice in Application.Status.choices}
+    app.status = new_status
+    app.save(update_fields=["status"])
 
-      if new_status not in valid_statuses:
-          return Response(
-            {"detail": "Invalid status value."},
-            status=status.HTTP_400_BAD_REQUEST
-          )
-
-      app.status = new_status
-      app.save(update_fields=["status"])
-
-      return Response(
-        ApplicationSerializer(app).data,
-        status=status.HTTP_200_OK
-      )
+    return Response(
+      ApplicationSerializer(app).data,
+      status=status.HTTP_200_OK
+    )
