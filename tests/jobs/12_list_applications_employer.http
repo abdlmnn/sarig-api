@@ -1,0 +1,4 @@
+@access=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3NDAxNzU2LCJpYXQiOjE3NzczOTk5NTYsImp0aSI6ImRjMjI5YWNhY2ZjMjRjMTY5ODY4MDVhNzE0ZWNjYmJmIiwidXNlcl9pZCI6IjcifQ.f5e-iAvM6wx7fEeBmAt_GZw3k2zO47A5FyfbseBU7sE
+
+GET http://127.0.0.1:8000/api/v1/jobs/applications/
+Authorization: Bearer {{access}}

@@ -1,0 +1,10 @@
+@access=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3NDAwNzA0LCJpYXQiOjE3NzczOTg5MDQsImp0aSI6IjNhY2FhM2ZjZjZjNTQwYTU4ZGRhYjU1MTNlODc3Y2FiIiwidXNlcl9pZCI6IjgifQ.Kkbbh8137DQvhbdelWBZK1RowSbw3npaVHVMUcLDfmU
+
+POST http://127.0.0.1:8000/api/v1/users/profiles/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "role": 2,
+  "phone_number": "09170000011"
+}
