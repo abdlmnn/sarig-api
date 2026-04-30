@@ -1,0 +1,11 @@
+@access=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3Mzk5MTgzLCJpYXQiOjE3NzczOTczODMsImp0aSI6IjdlMDc4OWZkZDRkMTQyMjc5NTQ1ZjIzODYzODYxOGNhIiwidXNlcl9pZCI6IjcifQ.L4KJ_kUcPz_mx58xmFqQFVkOVxNEIYhSPA9UaQATfLo
+@jobId=1
+
+POST http://127.0.0.1:8000/api/v1/jobs/postings/{{jobId}}/apply/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "job": "{{jobId}}",
+  "cover_letter": "I am interested and available to start immediately."
+}
