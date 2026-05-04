@@ -18,6 +18,7 @@ ALLOWED_HOSTS = [
 
 
 INSTALLED_APPS = [
+    # 'django.contrib.gis',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -28,6 +29,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "apps.users",
+    "apps.vendors",
 ]
 
 MIDDLEWARE = [
