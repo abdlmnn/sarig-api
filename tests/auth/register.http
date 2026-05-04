@@ -1,5 +1,6 @@
 @username=Testing
 @email=test@gmail.com
+@phone_number=test@gmail.com
 @password=pass123
 
 POST http://127.0.0.1:8000/api/v1/users/register/
@@ -8,5 +9,6 @@ Content-Type: application/json
 {
   "username": "{{username}}",
   "email": "{{email}}",
+  "phone_number": "{{phone_number}}",
   "password": "{{password}}"
 }
