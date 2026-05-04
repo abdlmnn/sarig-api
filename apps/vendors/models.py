@@ -2,6 +2,9 @@ from django.db import models
 from apps.users.models import User
 from decimal import Decimal
 
+# GDAL / POSTGIS (TEMPORARILY DISABLED FOR WINDOWS)
+# from django.contrib.gis.db import models as gis_model
+
 
 class BusinessVertical(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -31,7 +34,7 @@ class Store(models.Model):
     name = models.CharField(max_length=255)
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
-    # GDAL + POSTGIS
+    # FUTURE (GDAL / POSTGIS)
     # location = gis_models.PointField(geography=True)
     street_address = models.TextField()
     city = models.CharField(max_length=100)
