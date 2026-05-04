@@ -1,5 +1,28 @@
-from rest_framework import permissions
+from rest_framework.permissions import BasePermission
 
-class IsOwnerOrReadOnly(permissions.BasePermission):
-    def has_object_permission(self, request, view, obj):
-        return obj.user == request.user or request.method in permissions.SAFE_METHODS
+
+class HasRole(BasePermission):
+    role_name = None
+
+    def has_permission(self, request, view):
+        user = request.user
+
+        if not user.is_authenticated:
+            return False
+
+        if user.is_staff:
+            return True
+
+        return user.roles.filter(name=self.role_name).exists()
+
+
+class IsCustomer(HasRole):
+    role_name = "customer"
+
+
+class IsMerchant(HasRole):
+    role_name = "merchant"
+
+
+class IsRider(HasRole):
+    role_name = "rider"
