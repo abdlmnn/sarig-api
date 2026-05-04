@@ -4,7 +4,6 @@ from datetime import timedelta
 
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
@@ -28,7 +27,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
-    "apps.users.apps.UsersConfig",
+    "apps.users",
 ]
 
 MIDDLEWARE = [
@@ -108,14 +107,11 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(
         minutes=int(os.getenv("JWT_ACCESS_MINUTES", "5"))
     ),
-    "REFRESH_TOKEN_LIFETIME": timedelta(
-        days=int(os.getenv("JWT_REFRESH_DAYS", "1"))
-    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_DAYS", "1"))),
     "ROTATE_REFRESH_TOKENS": os.getenv("JWT_ROTATE_REFRESH_TOKENS", "1").lower()
     in {"1", "true", "yes", "on"},
-    "BLACKLIST_AFTER_ROTATION": os.getenv(
-        "JWT_BLACKLIST_AFTER_ROTATION", "1"
-    ).lower() in {"1", "true", "yes", "on"},
+    "BLACKLIST_AFTER_ROTATION": os.getenv("JWT_BLACKLIST_AFTER_ROTATION", "1").lower()
+    in {"1", "true", "yes", "on"},
     "ALGORITHM": os.getenv("JWT_ALGORITHM", "HS256"),
     "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
     "AUTH_HEADER_TYPES": (os.getenv("JWT_AUTH_HEADER_TYPE", "Bearer"),),
