@@ -1,4 +1,4 @@
-# API Documentation (v1)
+# Users API (v1)
 
 Base URL:
 http://localhost:8000/api/v1/
