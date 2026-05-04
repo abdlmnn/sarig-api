@@ -8,3 +8,12 @@ scripts:
 
   admin:
    - python manage.py createsuperuser
+
+  shell:
+   - python manage.py shell
+
+  clean_db:
+   - python manage.py flush
+
+  check:
+   - python manage.py check
