@@ -29,9 +29,10 @@ class Store(models.Model):
         related_name="stores",
     )
     name = models.CharField(max_length=255)
-    # latitude = models.DecimalField(max_digits=9, decimal_places=6)
-    # longitude = models.DecimalField(max_digits=9, decimal_places=6)
-    location = gis_models.PointField(geography=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    # GDAL + POSTGIS
+    # location = gis_models.PointField(geography=True)
     street_address = models.TextField()
     city = models.CharField(max_length=100)
     commission_rate = models.DecimalField(
