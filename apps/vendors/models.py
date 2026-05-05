@@ -1,12 +1,11 @@
+import uuid
 from django.db import models
 from apps.users.models import User
 from decimal import Decimal
 
-# GDAL / POSTGIS (TEMPORARILY DISABLED FOR WINDOWS)
-# from django.contrib.gis.db import models as gis_model
-
 
 class BusinessVertical(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True)
     is_active = models.BooleanField(default=True)
@@ -21,6 +20,7 @@ class BusinessVertical(models.Model):
 
 
 class Store(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -32,12 +32,14 @@ class Store(models.Model):
         related_name="stores",
     )
     name = models.CharField(max_length=255)
+    
+    # Coordinates (DecimalField for now as per user request)
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
-    # FUTURE (GDAL / POSTGIS)
-    # location = gis_models.PointField(geography=True)
+    
     street_address = models.TextField()
     city = models.CharField(max_length=100)
+    
     commission_rate = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -45,6 +47,11 @@ class Store(models.Model):
     )
     is_open = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+    
+    # Metadata
+    image = models.ImageField(upload_to="stores/", null=True, blank=True)
+    rating = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal("5.00"))
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
