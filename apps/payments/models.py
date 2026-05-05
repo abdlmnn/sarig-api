@@ -36,6 +36,9 @@ class PaymentTransaction(models.Model):
     external_transaction_id = models.CharField(
         max_length=255, blank=True, null=True, db_index=True, unique=True
     )
+    payment_id = models.CharField(
+        max_length=255, blank=True, null=True, db_index=True
+    )
     provider_raw_response = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

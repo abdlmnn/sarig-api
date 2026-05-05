@@ -47,6 +47,7 @@ class Store(models.Model):
     )
     is_open = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+    auto_accept_orders = models.BooleanField(default=False)
     
     # Metadata
     image = models.ImageField(upload_to="stores/", null=True, blank=True)

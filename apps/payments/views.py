@@ -36,7 +36,16 @@ class PayMongoWebhookView(APIView):
         # Save raw response for audit
         payment_tx.provider_raw_response = payload
 
+        # Idempotency Check: Don't process if already successful
+        if payment_tx.status == PaymentStatus.SUCCESS:
+            return Response({"status": "Duplicate webhook ignored"}, status=200)
+
         if event_type == 'payment.paid' or event_type == 'checkout_session.payment.paid':
+            # Extract actual payment ID for future refunds
+            payment_id = data_object.get('attributes', {}).get('payment_id')
+            if payment_id:
+                payment_tx.payment_id = payment_id
+            
             payment_tx.status = PaymentStatus.SUCCESS
             payment_tx.save()
 
@@ -45,9 +54,10 @@ class PayMongoWebhookView(APIView):
             success, message = InventoryService.deduct_stock_for_order(payment_tx.order.id)
 
             if success:
-                # Inventory deducted cleanly! Proceed as normal.
+                # Inventory deducted cleanly!
                 order = payment_tx.order
-                order.status = OrderStatus.ACCEPTED
+                # Note: We NO LONGER set OrderStatus.ACCEPTED here.
+                # The order stays PENDING (Merchant Approval) even if paid.
                 order.save()
                 
                 # Trigger real-time alert to Merchant
@@ -68,6 +78,20 @@ class PayMongoWebhookView(APIView):
                         }
                     }
                 )
+
+                # Handle Auto-Acceptance
+                # Notify Merchant (Push Notification)
+                from apps.users.notifications import PushNotificationService
+                PushNotificationService.notify_new_order(order.store.owner, order.id)
+
+                if order.store.auto_accept_orders:
+                    order.status = OrderStatus.ACCEPTED
+                    order.save()
+                    order.broadcast_status_update()
+                else:
+                    # Schedule auto-cancellation in 5 minutes (if merchant doesn't accept manually)
+                    from apps.orders.tasks import auto_cancel_stale_order
+                    auto_cancel_stale_order.apply_async((str(order.id),), countdown=300)
             else:
                 # DISASTER AVERTED!
                 # The item sold out while they were paying GCash.

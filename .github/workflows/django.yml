@@ -34,10 +34,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Check Code Formatting & Syntax
+    - name: Check Code Formatting & Syntax (Linting)
       run: |
-        # In the future, you can add tools like flake8 or black here.
-        python manage.py check
+        pip install flake8
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=migrations,venv,.venv
+        # exit-zero treats all errors as warnings.
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=migrations,venv,.venv
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
         
     - name: Verify Database Migrations
       env:
