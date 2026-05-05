@@ -57,3 +57,110 @@ class StoreViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only merchants can create stores.")
 
         serializer.save(owner=user)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.db.models import Sum, Count, F
+from django.db.models.functions import TruncDate
+from django.utils import timezone
+from datetime import timedelta
+from apps.orders.models import Order, OrderStatus, OrderItem
+from django.shortcuts import get_object_or_404
+
+class MerchantAnalyticsView(APIView):
+    permission_classes = [IsMerchantOrAdmin]
+
+    def get(self, request, store_id):
+        store = get_object_or_404(Store, id=store_id)
+        
+        # Security Check
+        if not request.user.is_staff and store.owner != request.user:
+            raise PermissionDenied("You do not own this store.")
+
+        now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        seven_days_ago = today_start - timedelta(days=7)
+
+        # 1. Financial Overview (Only Delivered orders count as Revenue)
+        delivered_orders = Order.objects.filter(store=store, status=OrderStatus.DELIVERED)
+        
+        total_revenue = delivered_orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        total_orders = delivered_orders.count()
+        
+        today_revenue = delivered_orders.filter(created_at__gte=today_start).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        today_orders = delivered_orders.filter(created_at__gte=today_start).count()
+
+        # 2. Top Selling Products
+        top_products = OrderItem.objects.filter(
+            order__store=store, 
+            order__status=OrderStatus.DELIVERED
+        ).values(
+            'product__name'
+        ).annotate(
+            total_sold=Sum('quantity')
+        ).order_by('-total_sold')[:5]
+
+        # 3. 7-Day Sales Trend
+        sales_trend = delivered_orders.filter(
+            created_at__gte=seven_days_ago
+        ).annotate(
+            date=TruncDate('created_at')
+        ).values('date').annotate(
+            daily_revenue=Sum('total_amount'),
+            daily_orders=Count('id')
+        ).order_by('date')
+
+        return Response({
+            "overview": {
+                "total_revenue": float(total_revenue),
+                "total_orders": total_orders,
+                "today_revenue": float(today_revenue),
+                "today_orders": today_orders,
+            },
+            "top_products": top_products,
+            "sales_trend": list(sales_trend)
+        })
+
+
+class NearbyStoresView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lng = request.query_params.get("lng")
+        
+        if not lat or not lng:
+            return Response({"error": "Latitude and Longitude are required."}, status=400)
+
+        from apps.riders.services import RiderDispatcherService
+        
+        stores = Store.objects.filter(is_active=True).select_related('vertical')
+        
+        results = []
+        for store in stores:
+            distance = RiderDispatcherService.haversine(
+                float(lng), float(lat),
+                float(store.longitude), float(store.latitude)
+            )
+            
+            # Get average rating
+            from django.db.models import Avg
+            from apps.reviews.models import OrderReview
+            avg_rating = OrderReview.objects.filter(store=store).aggregate(Avg('store_rating'))['store_rating__avg'] or 0
+
+            results.append({
+                "id": str(store.id),
+                "name": store.name,
+                "vertical": store.vertical.name if store.vertical else None,
+                "address": store.address,
+                "distance_km": round(distance, 2),
+                "rating": round(avg_rating, 1),
+                "is_open": store.is_open,
+                "logo": store.logo.url if store.logo else None,
+            })
+
+        # Sort by distance
+        results.sort(key=lambda x: x['distance_km'])
+
+        return Response(results)
