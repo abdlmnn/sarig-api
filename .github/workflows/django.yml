@@ -1,0 +1,68 @@
+name: Sarig API CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Check Code Formatting & Syntax
+      run: |
+        # In the future, you can add tools like flake8 or black here.
+        python manage.py check
+        
+    - name: Verify Database Migrations
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+      run: |
+        # This guarantees that no developer merges broken database changes.
+        python manage.py makemigrations --check --dry-run
+        python manage.py migrate
+
+  # deployment:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #   - name: Deploy to Server (Example)
+  #     uses: appleboy/ssh-action@master
+  #     with:
+  #       host: ${{ secrets.SERVER_HOST }}
+  #       username: ${{ secrets.SERVER_USER }}
+  #       key: ${{ secrets.SSH_PRIVATE_KEY }}
+  #       script: |
+  #         cd /path/to/sarig-api
+  #         git pull origin main
+  #         source venv/bin/activate
+  #         pip install -r requirements.txt
+  #         python manage.py migrate
+  #         sudo systemctl restart daphne celery
