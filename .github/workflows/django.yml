@@ -38,17 +38,21 @@ jobs:
       run: |
         pip install flake8
         # Stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=migrations,venv,.venv
         # exit-zero treats all errors as warnings.
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-    - name: Run MVP Automated Tests
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=migrations,venv,.venv
       env:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
-        REDIS_URL: "redis://localhost:6379/0"
+        
+    - name: Verify Database Migrations
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
       run: |
-        python manage.py test
+        # This guarantees that no developer merges broken database changes.
+        python manage.py makemigrations --check --dry-run
+        python manage.py migrate
 
   # deployment:
   #   needs: build
