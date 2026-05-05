@@ -16,6 +16,6 @@ class RiderProfileAdmin(admin.ModelAdmin):
 
 @admin.register(RiderTransaction)
 class RiderTransactionAdmin(admin.ModelAdmin):
-    list_display = ('rider', 'amount', 'transaction_type', 'order', 'created_at')
+    list_display = ('rider_profile', 'amount', 'transaction_type', 'order', 'created_at')
     list_filter = ('transaction_type', 'created_at')
-    search_fields = ('rider__user__username', 'order__id')
+    search_fields = ('rider_profile__user__username', 'order__id')
