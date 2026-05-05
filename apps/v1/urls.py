@@ -15,4 +15,8 @@ urlpatterns = [
     path("orders/", include("apps.orders.urls")),
     path("payments/", include("apps.payments.urls")),
     path("onboarding/", include("apps.onboarding.urls")),
+    path("riders/", include("apps.riders.urls")),
+    path("marketing/", include("apps.marketing.urls")),
+    path("chat/", include("apps.chat.urls")),
+    path("reviews/", include("apps.reviews.urls")),
 ]

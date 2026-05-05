@@ -55,3 +55,29 @@ class PayMongoService:
             "id": "cs_mock_123456789",
             "checkout_url": "https://checkout.paymongo.com/mock_session"
         }
+
+    @classmethod
+    def create_refund(cls, payment_id, amount, reason="requested_by_customer"):
+        """
+        Refunds a specific payment in PayMongo.
+        Amount is in decimal PHP (e.g. 150.00).
+        """
+        url = f"{cls.BASE_URL}/refunds"
+        
+        payload = {
+            "data": {
+                "attributes": {
+                    "amount": int(amount * 100),
+                    "payment_id": payment_id,
+                    "reason": reason,
+                    "notes": "Order rejected by merchant"
+                }
+            }
+        }
+
+        # In a real scenario:
+        # response = requests.post(url, json=payload, headers=cls.get_headers())
+        # return response.json()
+
+        # Mock success for now
+        return {"status": "success", "refund_id": "ref_mock_123"}

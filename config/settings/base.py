@@ -14,7 +14,9 @@ ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if host.strip()
-]
+] + [".ngrok-free.app"]
+
+CSRF_TRUSTED_ORIGINS = ["https://*.ngrok-free.app"]
 
 
 INSTALLED_APPS = [
@@ -35,6 +37,10 @@ INSTALLED_APPS = [
     "apps.orders",
     "apps.payments",
     "apps.onboarding",
+    "apps.riders",
+    "apps.marketing",
+    "apps.chat",
+    "apps.reviews",
     "cloudinary",
     "cloudinary_storage",
 ]
