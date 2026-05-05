@@ -1,25 +1,51 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Barangay, User, UserProfile
+from .models import Role, User, Profile, Address
+
+
+@admin.register(Role)
+class RoleAdmin(admin.ModelAdmin):
+    list_display = ("name",)
+    search_fields = ("name",)
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ("username", "email", "is_staff", "is_active", "date_joined")
-    search_fields = ("username", "email")
-    ordering = ("-date_joined",)
+
+    fieldsets = BaseUserAdmin.fieldsets + (
+        (
+            "Roles",
+            {"fields": ("roles", "phone_number")},
+        ),
+    )
+
+    filter_horizontal = ("roles",)  # important for ManyToMany UI
+
+    list_display = (
+        "username",
+        "email",
+        "phone_number",
+        "get_roles",
+        "is_staff",
+    )
+
+    search_fields = ("username", "email", "phone_number")
+
+    def get_roles(self, obj):
+        return ", ".join([r.name for r in obj.roles.all()])
+
+    get_roles.short_description = "Roles"
 
 
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "role", "verification_status", "barangay", "created_at")
-    list_filter = ("role", "verification_status", "barangay")
-    search_fields = ("user__username", "user__email", "phone_number")
-    autocomplete_fields = ("user", "barangay")
+@admin.register(Profile)
+class ProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "date_of_birth")
+    search_fields = ("user__username", "user__email")
 
 
-@admin.register(Barangay)
-class BarangayAdmin(admin.ModelAdmin):
-    list_display = ("name",)
-    search_fields = ("name",)
+@admin.register(Address)
+class AddressAdmin(admin.ModelAdmin):
+    list_display = ("user", "label", "is_default")
+    search_fields = ("user__username", "label")
+    list_filter = ("is_default",)

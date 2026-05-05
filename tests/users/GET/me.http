@@ -1,0 +1,6 @@
+@token=YOUR_JWT_ACCESS_TOKEN
+
+### Get current user profile
+GET http://127.0.0.1:8000/api/v1/users/me/
+Content-Type: application/json
+Authorization: Bearer {{token}}

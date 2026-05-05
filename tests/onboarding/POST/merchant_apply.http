@@ -1,0 +1,40 @@
+### Apply to be a Merchant (Requires Auth and multipart/form-data)
+# Note: In standard .http files, sending multipart with actual files is tricky.
+# This serves as a structural reference. You will likely test this via Flutter or Postman.
+POST http://127.0.0.1:8000/api/v1/onboarding/merchant/apply/
+Authorization: Bearer {{access_token}}
+Content-Type: multipart/form-data; boundary=boundary123
+
+--boundary123
+Content-Disposition: form-data; name="business_name"
+
+Suhail's Best Chicken
+--boundary123
+Content-Disposition: form-data; name="business_address"
+
+Block 2, Marawi City
+--boundary123
+Content-Disposition: form-data; name="contact_number"
+
+09123456789
+--boundary123
+Content-Disposition: form-data; name="dti_sec_certificate"; filename="dti.pdf"
+Content-Type: application/pdf
+
+<dummy data>
+--boundary123
+Content-Disposition: form-data; name="mayors_permit"; filename="permit.pdf"
+Content-Type: application/pdf
+
+<dummy data>
+--boundary123
+Content-Disposition: form-data; name="owner_valid_id"; filename="id.jpg"
+Content-Type: image/jpeg
+
+<dummy data>
+--boundary123
+Content-Disposition: form-data; name="storefront_photo"; filename="store.jpg"
+Content-Type: image/jpeg
+
+<dummy data>
+--boundary123--
