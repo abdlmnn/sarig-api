@@ -15,8 +15,19 @@ class OrderStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelled"
 
 
+class DeliveryMethod(models.TextChoices):
+    DELIVERY = "DELIVERY", "Home Delivery"
+    PICKUP = "PICKUP", "Self-Pickup"
+
+
 class Order(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    delivery_method = models.CharField(
+        max_length=20,
+        choices=DeliveryMethod.choices,
+        default=DeliveryMethod.DELIVERY,
+        db_index=True
+    )
     customer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -45,15 +56,48 @@ class Order(models.Model):
     delivery_fee = models.DecimalField(max_digits=6, decimal_places=2)
     system_fee = models.DecimalField(max_digits=6, decimal_places=2)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Marketing
+    promo_code = models.ForeignKey(
+        "marketing.PromoCode", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
+    estimated_arrival_time = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"Order #{str(self.id)[:8]} - {self.store.name} - {self.status}"
+
+    def broadcast_status_update(self):
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        
+        channel_layer = get_channel_layer()
+        # 1. Notify Tracking Group (Mobile Map)
+        async_to_sync(channel_layer.group_send)(
+            f"order_{self.id}",
+            {
+                "type": "status_update",
+                "status": self.status,
+            }
+        )
+
+        # 2. Notify Chat Group (To close the chat UI)
+        async_to_sync(channel_layer.group_send)(
+            f"chat_{self.id}",
+            {
+                "type": "chat_message",
+                "message": f"SYSTEM: Order is {self.status}. Chat is now closed.",
+                "sender": "System",
+                "timestamp": str(self.updated_at)
+            }
+        )
 
 
 class OrderItem(models.Model):
