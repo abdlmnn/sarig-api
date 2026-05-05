@@ -30,3 +30,41 @@ class MerchantOrderConsumer(AsyncWebsocketConsumer):
             "type": "NEW_ORDER",
             "data": message
         }))
+
+
+class OrderConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.order_id = self.scope["url_route"]["kwargs"]["order_id"]
+        self.order_group_name = f"order_{self.order_id}"
+
+        # Join order group
+        await self.channel_layer.group_add(
+            self.order_group_name,
+            self.channel_name
+        )
+
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        # Leave order group
+        await self.channel_layer.group_discard(
+            self.order_group_name,
+            self.channel_name
+        )
+
+    # Receive status updates
+    async def status_update(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "STATUS_UPDATE",
+            "status": event["status"]
+        }))
+
+    # Receive location updates from rider
+    async def location_update(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "LOCATION_UPDATE",
+            "latitude": event["latitude"],
+            "longitude": event["longitude"],
+            "remaining_minutes": event.get("remaining_minutes"),
+            "distance_km": event.get("distance_km")
+        }))
