@@ -19,6 +19,8 @@ ALLOWED_HOSTS = [
 CSRF_TRUSTED_ORIGINS = ["https://*.ngrok-free.app"]
 
 
+import importlib.util
+
 INSTALLED_APPS = [
     "daphne",
     "django.contrib.admin",
@@ -38,12 +40,15 @@ INSTALLED_APPS = [
     "apps.payments",
     "apps.onboarding",
     "apps.riders",
-    "apps.marketing",
-    "apps.chat",
-    "apps.reviews",
     "cloudinary",
     "cloudinary_storage",
 ]
+
+# Defensively add optional feature apps if they exist in the current branch
+optional_apps = ["apps.marketing", "apps.chat", "apps.reviews"]
+for app in optional_apps:
+    if importlib.util.find_spec(app) is not None:
+        INSTALLED_APPS.append(app)
 
 ASGI_APPLICATION = "config.asgi.application"
 
