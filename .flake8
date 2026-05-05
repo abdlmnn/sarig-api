@@ -1,0 +1,22 @@
+[flake8]
+# Stop the build on syntax errors and undefined names only
+select = E9,F63,F7,F82
+max-line-length = 127
+max-complexity = 10
+
+# Exclude these directories from ALL flake8 checks
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    */migrations/*,
+    migrations,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    staticfiles,
+    media,
+    node_modules
