@@ -2,10 +2,30 @@ from rest_framework import serializers
 from .models import Role, User, Profile, Address
 
 
+class RoleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Role
+        fields = "__all__"
+
+
 class UserSerializer(serializers.ModelSerializer):
+    is_customer = serializers.BooleanField(read_only=True)
+    is_merchant = serializers.BooleanField(read_only=True)
+    is_rider = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = User
-        fields = ("id", "username", "email", "phone_number", "roles")
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "is_customer",
+            "is_merchant",
+            "is_rider",
+        )
 
 
 class UserRegisterSerializer(serializers.ModelSerializer):
@@ -18,17 +38,15 @@ class UserRegisterSerializer(serializers.ModelSerializer):
             "email",
             "phone_number",
             "password",
+            "first_name",
+            "last_name",
         )
 
     def create(self, validated_data):
-        user = User.objects.create_user(
-            username=validated_data["username"],
-            email=validated_data["email"],
-            phone_number=validated_data["phone_number"],
-            password=validated_data["password"],
-        )
+        user = User.objects.create_user(**validated_data)
 
-        customer_role = Role.objects.get(name="customer")
+        # Default role is Customer
+        customer_role, _ = Role.objects.get_or_create(name="Customer")
         user.roles.add(customer_role)
 
         return user
@@ -39,23 +57,17 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = (
-            "id",
-            "user",
-            "avatar",
-            "date_of_birth",
-        )
+        fields = "__all__"
 
 
 class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
-        fields = (
-            "id",
-            "user",
-            "label",
-            "latitude",
-            "longitude",
-            "street_address",
-            "is_default",
-        )
+        fields = "__all__"
+        read_only_fields = ("user",)
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        if request and hasattr(request, "user"):
+            validated_data["user"] = request.user
+        return super().create(validated_data)
