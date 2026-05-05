@@ -1,0 +1,8 @@
+### List all categories
+GET http://127.0.0.1:8000/api/v1/catalog/categories/
+Content-Type: application/json
+
+### List categories for a specific store
+# Replace {{store_id}} with a real UUID after creating a store
+GET http://127.0.0.1:8000/api/v1/catalog/categories/?store_id={{store_id}}
+Content-Type: application/json

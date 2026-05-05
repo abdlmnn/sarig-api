@@ -1,0 +1,4 @@
+### Get specific product details (includes inventory and modifiers)
+# Replace {{product_id}} with a real UUID after creating a product
+GET http://127.0.0.1:8000/api/v1/catalog/products/{{product_id}}/
+Content-Type: application/json

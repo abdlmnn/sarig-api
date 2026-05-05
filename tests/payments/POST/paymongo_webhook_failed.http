@@ -1,0 +1,17 @@
+### Simulate PayMongo Failed Webhook
+POST http://127.0.0.1:8000/api/v1/payments/webhooks/paymongo/
+Content-Type: application/json
+
+{
+  "data": {
+    "attributes": {
+      "type": "payment.failed",
+      "data": {
+        "id": "cs_mock_123456789",
+        "attributes": {
+          "status": "failed"
+        }
+      }
+    }
+  }
+}

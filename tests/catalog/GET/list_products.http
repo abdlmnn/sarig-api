@@ -1,0 +1,8 @@
+### List all products
+GET http://127.0.0.1:8000/api/v1/catalog/products/
+Content-Type: application/json
+
+### List products for a specific category
+# Replace {{category_id}} with a real UUID
+GET http://127.0.0.1:8000/api/v1/catalog/products/?category_id={{category_id}}
+Content-Type: application/json
