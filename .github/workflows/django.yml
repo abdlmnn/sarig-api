@@ -37,10 +37,9 @@ jobs:
     - name: Check Code Formatting & Syntax (Linting)
       run: |
         pip install flake8
-        # Stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=migrations,venv,.venv
-        # exit-zero treats all errors as warnings.
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=migrations,venv,.venv
+        # All exclusion rules are defined in .flake8 config file at the project root.
+        # This is the most reliable cross-platform way to configure flake8.
+        flake8 .
       env:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
