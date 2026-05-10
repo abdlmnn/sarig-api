@@ -2,6 +2,8 @@ import uuid
 from django.db import models
 from django.conf import settings
 from apps.users.geo import to_wkt_point
+from django.contrib.gis.db import models as gis_models
+from django.contrib.gis.geos import Point
 
 class RiderProfile(models.Model):
     VEHICLE_CHOICES = [
@@ -35,6 +37,7 @@ class RiderProfile(models.Model):
     current_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     current_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     location_wkt = models.CharField(max_length=120, null=True, blank=True, db_index=True)
+    location_point = gis_models.PointField(geography=True, null=True, blank=True)
     last_location_update = models.DateTimeField(auto_now=True)
 
     # Wallet
@@ -53,6 +56,8 @@ class RiderProfile(models.Model):
 
     def save(self, *args, **kwargs):
         self.location_wkt = to_wkt_point(self.current_latitude, self.current_longitude)
+        if getattr(settings, "USE_POSTGIS", False) and self.current_latitude is not None and self.current_longitude is not None:
+            self.location_point = Point(float(self.current_longitude), float(self.current_latitude), srid=4326)
         super().save(*args, **kwargs)
 
 
