@@ -53,7 +53,7 @@ class StoreViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # ensure only merchants can create stores
-        if not user.is_staff and not user.roles.filter(name="merchant").exists():
+        if not user.is_staff and not user.roles.filter(name__iexact="Merchant").exists():
             raise PermissionDenied("Only merchants can create stores.")
 
         serializer.save(owner=user)
@@ -67,6 +67,7 @@ from django.utils import timezone
 from datetime import timedelta
 from apps.orders.models import Order, OrderStatus, OrderItem
 from django.shortcuts import get_object_or_404
+from apps.users.geo import get_lat_lng
 
 class MerchantAnalyticsView(APIView):
     permission_classes = [IsMerchantOrAdmin]
@@ -139,9 +140,10 @@ class NearbyStoresView(APIView):
         
         results = []
         for store in stores:
+            store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
             distance = RiderDispatcherService.haversine(
                 float(lng), float(lat),
-                float(store.longitude), float(store.latitude)
+                float(store_lng), float(store_lat)
             )
             
             # Get average rating
@@ -153,11 +155,11 @@ class NearbyStoresView(APIView):
                 "id": str(store.id),
                 "name": store.name,
                 "vertical": store.vertical.name if store.vertical else None,
-                "address": store.address,
+                "address": store.street_address,
                 "distance_km": round(distance, 2),
                 "rating": round(avg_rating, 1),
                 "is_open": store.is_open,
-                "logo": store.logo.url if store.logo else None,
+                "logo": store.image.url if store.image else None,
             })
 
         # Sort by distance

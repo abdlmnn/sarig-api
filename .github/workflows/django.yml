@@ -20,6 +20,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: sarig_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sarig_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - uses: actions/checkout@v3
@@ -33,6 +46,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+
+    - name: Install GIS system dependencies (GDAL/GEOS/PROJ)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gdal-bin libgdal-dev binutils libproj-dev
         
     - name: Check Code Formatting & Syntax (Linting)
       run: |
@@ -48,10 +66,47 @@ jobs:
       env:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
+        USE_POSTGIS: "1"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
       run: |
         # This guarantees that no developer merges broken database changes.
         python manage.py makemigrations --check --dry-run
         python manage.py migrate
+
+    - name: Run Critical Safety Test Suite
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+        USE_POSTGIS: "1"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
+      run: |
+        python manage.py test \
+          tests.orders.test_checkout \
+          tests.orders.test_merchant_actions \
+          tests.payments.test_webhook_security \
+          tests.riders.test_dispatch \
+          tests.users.test_notifications
+
+    - name: Run Full Test Suite
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+        USE_POSTGIS: "1"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
+      run: |
+        python manage.py test
 
   # deployment:
   #   needs: build

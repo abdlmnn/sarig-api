@@ -3,6 +3,7 @@ from decimal import Decimal
 from math import radians, cos, sin, asin, sqrt
 from django.db.models import Q
 from .models import RiderProfile
+from apps.users.geo import get_lat_lng
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,8 @@ class RiderDispatcherService:
         """
         logger.info(f"Dispatching rider for order {order.id}")
         
-        rider_profile, distance = cls.find_best_rider(
-            order.store.latitude, 
-            order.store.longitude
-        )
+        store_lat, store_lng = get_lat_lng(order.store, "latitude", "longitude")
+        rider_profile, distance = cls.find_best_rider(store_lat, store_lng)
 
         if rider_profile:
             order.rider = rider_profile.user
@@ -95,8 +94,9 @@ class RiderDispatcherService:
         rider_profile = order.rider.rider_profile
         
         # Calculate distance between store and customer
+        store_lat, store_lng = get_lat_lng(order.store, "latitude", "longitude")
         distance = cls.haversine(
-            float(order.store.longitude), float(order.store.latitude),
+            float(store_lng), float(store_lat),
             float(order.delivery_longitude), float(order.delivery_latitude)
         )
         
