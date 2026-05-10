@@ -67,6 +67,7 @@ from django.utils import timezone
 from datetime import timedelta
 from apps.orders.models import Order, OrderStatus, OrderItem
 from django.shortcuts import get_object_or_404
+from apps.users.geo import get_lat_lng
 
 class MerchantAnalyticsView(APIView):
     permission_classes = [IsMerchantOrAdmin]
@@ -139,9 +140,10 @@ class NearbyStoresView(APIView):
         
         results = []
         for store in stores:
+            store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
             distance = RiderDispatcherService.haversine(
                 float(lng), float(lat),
-                float(store.longitude), float(store.latitude)
+                float(store_lng), float(store_lat)
             )
             
             # Get average rating
