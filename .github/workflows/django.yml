@@ -20,6 +20,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: sarig_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sarig_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - uses: actions/checkout@v3
@@ -53,6 +66,12 @@ jobs:
       env:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
+        USE_POSTGIS: "1"
+        DB_NAME: sarig_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: 127.0.0.1
+        DB_PORT: "5432"
       run: |
         # This guarantees that no developer merges broken database changes.
         python manage.py makemigrations --check --dry-run
@@ -62,6 +81,12 @@ jobs:
       env:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
+        USE_POSTGIS: "1"
+        DB_NAME: sarig_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: 127.0.0.1
+        DB_PORT: "5432"
       run: |
         python manage.py test \
           tests.orders.test_checkout \
@@ -74,6 +99,12 @@ jobs:
       env:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
+        USE_POSTGIS: "1"
+        DB_NAME: sarig_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: 127.0.0.1
+        DB_PORT: "5432"
       run: |
         python manage.py test
 
