@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.conf import settings
+from apps.users.geo import to_wkt_point
 
 class RiderProfile(models.Model):
     VEHICLE_CHOICES = [
@@ -33,6 +34,7 @@ class RiderProfile(models.Model):
     # Real-time Location
     current_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     current_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    location_wkt = models.CharField(max_length=120, null=True, blank=True, db_index=True)
     last_location_update = models.DateTimeField(auto_now=True)
 
     # Wallet
@@ -48,6 +50,10 @@ class RiderProfile(models.Model):
             models.Index(fields=["is_online", "is_available", "can_do_delivery"]),
             models.Index(fields=["is_online", "is_available", "can_do_ride_hailing"]),
         ]
+
+    def save(self, *args, **kwargs):
+        self.location_wkt = to_wkt_point(self.current_latitude, self.current_longitude)
+        super().save(*args, **kwargs)
 
 
 class RiderTransaction(models.Model):

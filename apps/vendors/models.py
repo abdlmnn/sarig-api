@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from apps.users.models import User
 from decimal import Decimal
+from apps.users.geo import to_wkt_point
 
 
 class BusinessVertical(models.Model):
@@ -36,6 +37,7 @@ class Store(models.Model):
     # Coordinates (DecimalField for now as per user request)
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    location_wkt = models.CharField(max_length=120, null=True, blank=True, db_index=True)
     
     street_address = models.TextField()
     city = models.CharField(max_length=100)
@@ -66,3 +68,7 @@ class Store(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.city})"
+
+    def save(self, *args, **kwargs):
+        self.location_wkt = to_wkt_point(self.latitude, self.longitude)
+        super().save(*args, **kwargs)
