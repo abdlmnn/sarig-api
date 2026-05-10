@@ -14,10 +14,11 @@ class PayMongoWebhookView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        raw_body = request.body
         payload = request.data
         
         signature = request.headers.get('Paymongo-Signature')
-        if not self._is_valid_signature(request.body, signature):
+        if not self._is_valid_signature(raw_body, signature):
             return Response({"error": "Unauthorized"}, status=403)
 
         event_type = payload.get('data', {}).get('attributes', {}).get('type')

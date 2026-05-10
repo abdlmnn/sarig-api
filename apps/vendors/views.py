@@ -53,7 +53,7 @@ class StoreViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # ensure only merchants can create stores
-        if not user.is_staff and not user.roles.filter(name="merchant").exists():
+        if not user.is_staff and not user.roles.filter(name__iexact="Merchant").exists():
             raise PermissionDenied("Only merchants can create stores.")
 
         serializer.save(owner=user)

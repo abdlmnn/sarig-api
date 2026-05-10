@@ -166,6 +166,8 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 USE_CLOUDINARY = os.getenv("USE_CLOUDINARY", "False").lower() in {"1", "true", "yes", "on"}
+ENABLE_FCM_PUSH = os.getenv("ENABLE_FCM_PUSH", "False").lower() in {"1", "true", "yes", "on"}
+FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
 
 if USE_CLOUDINARY:
     # Use Cloudinary in production
