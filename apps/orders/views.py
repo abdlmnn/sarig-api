@@ -49,7 +49,7 @@ class CheckoutView(APIView):
             product = get_object_or_404(Product, id=item_data["product_id"])
             
             # Verify product belongs to store
-            if product.store != store:
+            if product.category.store != store:
                 return Response(
                     {"error": f"Product {product.name} does not belong to this store."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -176,7 +176,7 @@ class CheckoutView(APIView):
             else:
                 # Schedule auto-cancellation in 5 minutes (for manual acceptance)
                 from .tasks import auto_cancel_stale_order
-                auto_cancel_stale_order.apply_async((str(order.id),), countdown=300)
+                auto_cancel_stale_order.apply_async((str(order.id),), countdown=600)
 
             return Response({
                 "status": "success",

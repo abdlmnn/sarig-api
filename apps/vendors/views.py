@@ -153,11 +153,11 @@ class NearbyStoresView(APIView):
                 "id": str(store.id),
                 "name": store.name,
                 "vertical": store.vertical.name if store.vertical else None,
-                "address": store.address,
+                "address": store.street_address,
                 "distance_km": round(distance, 2),
                 "rating": round(avg_rating, 1),
                 "is_open": store.is_open,
-                "logo": store.logo.url if store.logo else None,
+                "logo": store.image.url if store.image else None,
             })
 
         # Sort by distance

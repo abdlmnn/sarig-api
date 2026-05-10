@@ -44,7 +44,7 @@ class GlobalProductSearchView(APIView):
         lng = request.query_params.get("lng")
         
         # 1. Search Products
-        products = Product.objects.select_related('store', 'category').filter(
+        products = Product.objects.select_related('category__store', 'category').filter(
             Q(name__icontains=query) | Q(description__icontains=query),
             is_active=True,
             is_available=True
@@ -52,7 +52,7 @@ class GlobalProductSearchView(APIView):
 
         results = []
         for product in products:
-            store = product.store
+            store = product.category.store
             distance = None
             
             # 2. Calculate Distance if user location provided
