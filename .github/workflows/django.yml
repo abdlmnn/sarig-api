@@ -53,6 +53,25 @@ jobs:
         python manage.py makemigrations --check --dry-run
         python manage.py migrate
 
+    - name: Run Critical Safety Test Suite
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+      run: |
+        python manage.py test \
+          tests.orders.test_checkout \
+          tests.orders.test_merchant_actions \
+          tests.payments.test_webhook_security \
+          tests.riders.test_dispatch \
+          tests.users.test_notifications
+
+    - name: Run Full Test Suite
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+      run: |
+        python manage.py test
+
   # deployment:
   #   needs: build
   #   runs-on: ubuntu-latest

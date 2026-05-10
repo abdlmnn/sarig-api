@@ -82,3 +82,33 @@ class PayMongoWebhookSecurityTests(TestCase):
             HTTP_PAYMONGO_SIGNATURE=signature,
         )
         self.assertEqual(res.status_code, 200)
+
+    @override_settings(PAYMONGO_WEBHOOK_SECRET="topsecret")
+    def test_webhook_is_idempotent_for_success_status(self):
+        payload = {
+            "data": {
+                "attributes": {
+                    "type": "checkout_session.payment.paid",
+                    "data": {"id": "cs_mock_123", "attributes": {"payment_id": "pay_1"}},
+                }
+            }
+        }
+        raw = json.dumps(payload).encode("utf-8")
+        signature = hmac.new(b"topsecret", raw, hashlib.sha256).hexdigest()
+
+        first = self.client.post(
+            "/api/v1/payments/webhooks/paymongo/",
+            data=raw,
+            content_type="application/json",
+            HTTP_PAYMONGO_SIGNATURE=signature,
+        )
+        second = self.client.post(
+            "/api/v1/payments/webhooks/paymongo/",
+            data=raw,
+            content_type="application/json",
+            HTTP_PAYMONGO_SIGNATURE=signature,
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.tx.refresh_from_db()
+        self.assertEqual(self.tx.status, PaymentStatus.SUCCESS)

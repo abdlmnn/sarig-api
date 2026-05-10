@@ -6,6 +6,9 @@ from apps.vendors.models import Store, BusinessVertical
 from apps.catalog.models import Category, Product
 from apps.orders.models import Order
 from apps.payments.models import PaymentTransaction, PaymentMethod
+from apps.marketing.models import PromoCode, DiscountType
+from django.utils import timezone
+from datetime import timedelta
 
 
 @override_settings(
@@ -39,6 +42,25 @@ class CheckoutFlowTests(TestCase):
         self.product = Product.objects.create(
             category=self.category, name="Burger", price=Decimal("100.00")
         )
+        self.other_merchant = User.objects.create_user(
+            username="merchant2", email="merchant2@test.com", password="pw12345"
+        )
+        self.other_vertical = BusinessVertical.objects.create(name="Cafe", slug="cafe")
+        self.other_store = Store.objects.create(
+            owner=self.other_merchant,
+            vertical=self.other_vertical,
+            name="Other Store",
+            latitude=7.210000,
+            longitude=125.470000,
+            street_address="Other St",
+            city="Marawi",
+        )
+        self.other_category = Category.objects.create(
+            store=self.other_store, name="Drinks", slug="drinks"
+        )
+        self.other_product = Product.objects.create(
+            category=self.other_category, name="Coffee", price=Decimal("80.00")
+        )
 
     def test_cod_checkout_creates_order_and_payment_transaction(self):
         self.client.force_authenticate(user=self.customer)
@@ -63,3 +85,44 @@ class CheckoutFlowTests(TestCase):
                 order=order, payment_method=PaymentMethod.COD
             ).exists()
         )
+
+    def test_checkout_rejects_product_from_different_store(self):
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.other_product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "PICKUP",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("does not belong to this store", res.data["error"])
+
+    def test_checkout_requires_store_and_items(self):
+        self.client.force_authenticate(user=self.customer)
+        res = self.client.post(
+            "/api/v1/orders/checkout/",
+            {"payment_method": "COD"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error"], "Store ID and items are required.")
+
+    def test_checkout_rejects_invalid_promo_code(self):
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "PICKUP",
+            "promo_code": "NOTREAL",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error"], "Invalid promo code.")
