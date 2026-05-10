@@ -43,6 +43,15 @@ INSTALLED_APPS = [
     "cloudinary_storage",
 ]
 
+USE_POSTGIS = os.getenv("USE_POSTGIS", "False").lower() in {"1", "true", "yes", "on"}
+GDAL_LIBRARY_PATH = os.getenv("GDAL_LIBRARY_PATH", "")
+
+if USE_POSTGIS and "django.contrib.gis" not in INSTALLED_APPS:
+    INSTALLED_APPS.insert(1, "django.contrib.gis")
+
+if GDAL_LIBRARY_PATH:
+    os.environ["GDAL_LIBRARY_PATH"] = GDAL_LIBRARY_PATH
+
 ASGI_APPLICATION = "config.asgi.application"
 
 CHANNEL_LAYERS = {

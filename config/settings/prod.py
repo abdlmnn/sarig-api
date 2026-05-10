@@ -25,7 +25,7 @@ CORS_ALLOWED_ORIGINS = [
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": "django.contrib.gis.db.backends.postgis" if USE_POSTGIS else "django.db.backends.postgresql",  # noqa: F405
         "NAME": os.getenv("POSTGRES_DB", ""),
         "USER": os.getenv("POSTGRES_USER", ""),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
