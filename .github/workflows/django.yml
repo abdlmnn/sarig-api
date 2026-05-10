@@ -67,11 +67,11 @@ jobs:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
         USE_POSTGIS: "1"
-        DB_NAME: sarig_test
-        DB_USER: postgres
-        DB_PASSWORD: postgres
-        DB_HOST: 127.0.0.1
-        DB_PORT: "5432"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
       run: |
         # This guarantees that no developer merges broken database changes.
         python manage.py makemigrations --check --dry-run
@@ -82,11 +82,11 @@ jobs:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
         USE_POSTGIS: "1"
-        DB_NAME: sarig_test
-        DB_USER: postgres
-        DB_PASSWORD: postgres
-        DB_HOST: 127.0.0.1
-        DB_PORT: "5432"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
       run: |
         python manage.py test \
           tests.orders.test_checkout \
@@ -100,11 +100,11 @@ jobs:
         SECRET_KEY: "dummy-key-for-ci"
         DEBUG: "1"
         USE_POSTGIS: "1"
-        DB_NAME: sarig_test
-        DB_USER: postgres
-        DB_PASSWORD: postgres
-        DB_HOST: 127.0.0.1
-        DB_PORT: "5432"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
       run: |
         python manage.py test
 
