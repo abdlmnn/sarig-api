@@ -3,7 +3,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Ride, RideEvent
+from .models import Ride, RideEvent, RideStatus
 from .serializers import RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
 
 
@@ -35,6 +35,44 @@ class RideViewSet(viewsets.ModelViewSet):
             self._enforce_transition_permissions(ride, new_status)
             ride.transition_to(new_status)
             if new_status == "CANCELLED":
+                ride.cancelled_by = request.user
+            ride.save()
+            RideEvent.objects.create(
+                ride=ride,
+                event_type=f"STATUS_{new_status}",
+                actor=request.user,
+                payload={"status": new_status},
+            )
+        except ValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="accept")
+    def accept(self, request, pk=None):
+        return self._transition_with_status(request, pk, RideStatus.MATCHED)
+
+    @action(detail=True, methods=["post"], url_path="arrive")
+    def arrive(self, request, pk=None):
+        return self._transition_with_status(request, pk, RideStatus.RIDER_ARRIVED)
+
+    @action(detail=True, methods=["post"], url_path="start")
+    def start(self, request, pk=None):
+        return self._transition_with_status(request, pk, RideStatus.IN_TRIP)
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        return self._transition_with_status(request, pk, RideStatus.COMPLETED)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        return self._transition_with_status(request, pk, RideStatus.CANCELLED)
+
+    def _transition_with_status(self, request, pk, new_status: str):
+        ride = self.get_object()
+        try:
+            self._enforce_transition_permissions(ride, new_status)
+            ride.transition_to(new_status)
+            if new_status == RideStatus.CANCELLED:
                 ride.cancelled_by = request.user
             ride.save()
             RideEvent.objects.create(
