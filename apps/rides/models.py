@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -56,6 +57,8 @@ class Ride(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    rider_accepted_at = models.DateTimeField(null=True, blank=True)
+    rider_cancel_penalty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

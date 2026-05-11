@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from math import radians, cos, sin, asin, sqrt
+from django.db.models import F
 
 from apps.riders.models import RiderProfile
 
@@ -51,6 +52,27 @@ class RideAssignmentService:
         pickup_lng = float(ride.pickup_lng)
         max_radius = float(settings.JOYRIDE_MATCHING_MAX_RADIUS_KM)
 
+        if getattr(settings, "USE_POSTGIS", False):
+            try:
+                from django.contrib.gis.db.models.functions import Distance
+                from django.contrib.gis.geos import Point
+                from django.contrib.gis.measure import D
+
+                pickup_point = Point(pickup_lng, pickup_lat, srid=4326)
+                geo_candidates = (
+                    candidates.filter(location_point__isnull=False)
+                    .annotate(distance=Distance("location_point", pickup_point))
+                    .filter(location_point__distance_lte=(pickup_point, D(km=max_radius)))
+                    .order_by("distance")
+                )
+                best = geo_candidates.first()
+                if best:
+                    km = float(best.distance.km if hasattr(best.distance, "km") else best.distance)
+                    return best, km
+            except Exception:
+                # Fall back to haversine path safely.
+                pass
+
         for rider in candidates:
             distance = cls.haversine_km(
                 pickup_lng,
@@ -71,6 +93,19 @@ class RideAssignmentService:
         if not rider:
             return ride
         return cls.assign_rider(ride, rider)
+
+    @staticmethod
+    def apply_rider_cancel_penalty(ride: Ride):
+        if not ride.rider:
+            return Decimal("0.00")
+        penalty = Decimal(str(settings.JOYRIDE_RIDER_CANCEL_PENALTY))
+        if penalty <= 0:
+            return Decimal("0.00")
+        if ride.rider_cancel_penalty > 0:
+            return ride.rider_cancel_penalty
+        RiderProfile.objects.filter(id=ride.rider_id).update(balance=F("balance") - penalty)
+        ride.rider_cancel_penalty = penalty
+        return penalty
 
 
 class RideFareService:

@@ -53,7 +53,28 @@ class RideViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="accept")
     def accept(self, request, pk=None):
-        return self._transition_with_status(request, pk, RideStatus.MATCHED)
+        ride = self.get_object()
+        user = request.user
+        if not ride.rider or ride.rider.user_id != user.id:
+            return Response({"detail": "Only assigned rider can accept this ride."}, status=status.HTTP_403_FORBIDDEN)
+        if ride.status != RideStatus.MATCHED:
+            return Response({"detail": "Ride must be MATCHED before rider acceptance."}, status=status.HTTP_400_BAD_REQUEST)
+        if ride.rider_accepted_at:
+            return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
+        from django.utils import timezone
+        ride.rider_accepted_at = timezone.now()
+        ride.save(update_fields=["rider_accepted_at", "updated_at"])
+        RideEvent.objects.create(
+            ride=ride,
+            event_type="RIDER_ACCEPTED",
+            actor=user,
+            payload={"status": ride.status},
+        )
+        try:
+            publish_ride_event(ride, "RIDER_ACCEPTED", {"status": ride.status})
+        except Exception:
+            pass
+        return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="arrive")
     def arrive(self, request, pk=None):
@@ -120,6 +141,9 @@ class RideViewSet(viewsets.ModelViewSet):
             if new_status == RideStatus.CANCELLED:
                 ride.cancelled_by = request.user
                 ride.cancel_reason = (extra_payload or {}).get("cancel_reason", "")
+                if ride.rider and ride.rider.user_id == request.user.id and ride.rider_accepted_at:
+                    penalty = RideAssignmentService.apply_rider_cancel_penalty(ride)
+                    (extra_payload := (extra_payload or {})).update({"rider_cancel_penalty": str(penalty)})
             ride.save()
             if new_status == RideStatus.COMPLETED:
                 RideFareService.finalize_fare(ride)
@@ -152,3 +176,5 @@ class RideViewSet(viewsets.ModelViewSet):
             raise ValidationError("Only admin/system can set MATCHED.")
         if not ride.rider or ride.rider.user_id != user.id:
             raise ValidationError("Only the assigned rider can update this ride status.")
+        if new_status in {RideStatus.RIDER_ARRIVED, RideStatus.IN_TRIP} and not ride.rider_accepted_at:
+            raise ValidationError("Rider must accept the ride before continuing trip flow.")

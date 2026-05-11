@@ -52,18 +52,18 @@ class RideActionTests(TestCase):
         res = self.client.post(f"/api/v1/rides/{self.ride.id}/arrive/")
         self.assertEqual(res.status_code, 404)
 
-    def test_admin_can_accept_and_assigned_rider_can_progress(self):
+    def test_assigned_rider_can_accept_and_progress(self):
         self.ride.rider = self.rider_profile
-        self.ride.save(update_fields=["rider", "updated_at"])
+        self.ride.status = RideStatus.MATCHED
+        self.ride.save(update_fields=["rider", "status", "updated_at"])
 
-        self.client.force_authenticate(user=self.admin)
+        self.client.force_authenticate(user=self.rider_user)
         accept_res = self.client.post(f"/api/v1/rides/{self.ride.id}/accept/")
         self.assertEqual(accept_res.status_code, 200)
         self.ride.refresh_from_db()
         self.assertEqual(self.ride.status, RideStatus.MATCHED)
-        self.assertIsNotNone(self.ride.matched_at)
+        self.assertIsNotNone(self.ride.rider_accepted_at)
 
-        self.client.force_authenticate(user=self.rider_user)
         arrive_res = self.client.post(f"/api/v1/rides/{self.ride.id}/arrive/")
         self.assertEqual(arrive_res.status_code, 200)
         self.ride.refresh_from_db()
@@ -138,6 +138,33 @@ class RideActionTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
 
+    @override_settings(JOYRIDE_RIDER_CANCEL_PENALTY="30.00")
+    def test_rider_cancel_after_accept_applies_penalty(self):
+        self.rider_profile.is_online = True
+        self.rider_profile.is_available = True
+        self.rider_profile.can_do_ride_hailing = True
+        self.rider_profile.vehicle_type = VehicleType.MOTORCYCLE
+        self.rider_profile.balance = 100
+        self.rider_profile.save()
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(
+            f"/api/v1/rides/{self.ride.id}/assign/",
+            {"rider_id": str(self.rider_profile.id)},
+            format="json",
+        )
+        self.client.force_authenticate(user=self.rider_user)
+        self.client.post(f"/api/v1/rides/{self.ride.id}/accept/")
+        res = self.client.post(
+            f"/api/v1/rides/{self.ride.id}/cancel/",
+            {"cancel_reason": "Traffic issue"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.ride.refresh_from_db()
+        self.rider_profile.refresh_from_db()
+        self.assertEqual(str(self.ride.rider_cancel_penalty), "30.00")
+        self.assertEqual(str(self.rider_profile.balance), "70.00")
+
     def test_create_ride_generates_estimated_fare_breakdown(self):
         self.client.force_authenticate(user=self.passenger)
         res = self.client.post(
@@ -165,6 +192,7 @@ class RideActionTests(TestCase):
         self.client.force_authenticate(user=self.admin)
         self.client.post(f"/api/v1/rides/{self.ride.id}/assign/", {"rider_id": str(self.rider_profile.id)}, format="json")
         self.client.force_authenticate(user=self.rider_user)
+        self.client.post(f"/api/v1/rides/{self.ride.id}/accept/")
         self.client.post(f"/api/v1/rides/{self.ride.id}/arrive/")
         self.client.post(f"/api/v1/rides/{self.ride.id}/start/")
         self.ride.distance_km = 5
