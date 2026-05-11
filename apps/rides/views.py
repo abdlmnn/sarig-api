@@ -110,6 +110,9 @@ class RideViewSet(viewsets.ModelViewSet):
             ride.save()
             if new_status == RideStatus.COMPLETED:
                 RideFareService.finalize_fare(ride)
+            if new_status in {RideStatus.COMPLETED, RideStatus.CANCELLED} and ride.rider:
+                ride.rider.is_available = True
+                ride.rider.save(update_fields=["is_available"])
             RideEvent.objects.create(
                 ride=ride,
                 event_type=f"STATUS_{new_status}",

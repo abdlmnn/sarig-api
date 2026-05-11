@@ -21,6 +21,8 @@ class RideAssignmentService:
         ride.assigned_vehicle_type = rider.vehicle_type
         ride.transition_to(RideStatus.MATCHED)
         ride.save()
+        rider.is_available = False
+        rider.save(update_fields=["is_available"])
         return ride
 
 

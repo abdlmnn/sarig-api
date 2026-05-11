@@ -28,12 +28,19 @@ class RideActionTests(TestCase):
         )
 
     def test_passenger_can_cancel_requested_ride(self):
+        self.ride.rider = self.rider_profile
+        self.ride.status = RideStatus.MATCHED
+        self.ride.save(update_fields=["rider", "status", "updated_at"])
+        self.rider_profile.is_available = False
+        self.rider_profile.save(update_fields=["is_available"])
         self.client.force_authenticate(user=self.passenger)
         res = self.client.post(f"/api/v1/rides/{self.ride.id}/cancel/")
         self.assertEqual(res.status_code, 200)
         self.ride.refresh_from_db()
+        self.rider_profile.refresh_from_db()
         self.assertEqual(self.ride.status, RideStatus.CANCELLED)
         self.assertEqual(self.ride.cancelled_by_id, self.passenger.id)
+        self.assertTrue(self.rider_profile.is_available)
 
     def test_non_assigned_rider_cannot_arrive(self):
         self.client.force_authenticate(user=self.rider_user)
@@ -84,9 +91,11 @@ class RideActionTests(TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.ride.refresh_from_db()
+        self.rider_profile.refresh_from_db()
         self.assertEqual(self.ride.status, RideStatus.MATCHED)
         self.assertEqual(self.ride.rider_id, self.rider_profile.id)
         self.assertEqual(self.ride.assigned_vehicle_type, VehicleType.MOTORCYCLE)
+        self.assertFalse(self.rider_profile.is_available)
 
     def test_assign_rejects_vehicle_mismatch(self):
         self.rider_profile.is_online = True
@@ -159,5 +168,7 @@ class RideActionTests(TestCase):
         complete_res = self.client.post(f"/api/v1/rides/{self.ride.id}/complete/")
         self.assertEqual(complete_res.status_code, 200)
         self.ride.refresh_from_db()
+        self.rider_profile.refresh_from_db()
         self.assertIsNotNone(self.ride.final_fare)
         self.assertGreater(self.ride.final_fare, 0)
+        self.assertTrue(self.rider_profile.is_available)
