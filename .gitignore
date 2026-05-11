@@ -57,3 +57,4 @@ kit/
 # Only the API reference docs are safe to publish.
 docs/
 !docs/api/
+!docs/api/**
