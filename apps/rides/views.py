@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from apps.riders.models import RiderProfile
 
 from .models import Ride, RideEvent, RideStatus
+from .realtime import publish_ride_event
 from .serializers import RideAssignSerializer, RideCancelSerializer, RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
 from .services import RideAssignmentService, RideFareService
 
@@ -103,6 +104,10 @@ class RideViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 payload={"rider_id": str(rider.id), "status": ride.status},
             )
+            try:
+                publish_ride_event(ride, "RIDE_ASSIGNED", {"rider_id": str(rider.id), "status": ride.status})
+            except Exception:
+                pass
         except ValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
@@ -127,6 +132,10 @@ class RideViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 payload={"status": new_status, **(extra_payload or {})},
             )
+            try:
+                publish_ride_event(ride, f"STATUS_{new_status}", {"status": new_status, **(extra_payload or {})})
+            except Exception:
+                pass
         except ValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)

@@ -4,6 +4,7 @@ from rest_framework import serializers
 from decimal import Decimal
 
 from .models import Ride, RideEvent, RideStatus
+from .realtime import publish_ride_event
 from .services import RideAssignmentService, RideFareService
 
 
@@ -38,6 +39,10 @@ class RideCreateSerializer(serializers.ModelSerializer):
             actor=ride.passenger,
             payload={"status": ride.status},
         )
+        try:
+            publish_ride_event(ride, "RIDE_REQUESTED", {"status": ride.status})
+        except Exception:
+            pass
         if settings.JOYRIDE_ENABLE_AUTO_MATCHING:
             prior_status = ride.status
             ride = RideAssignmentService.auto_assign_best_rider(ride)
@@ -48,6 +53,14 @@ class RideCreateSerializer(serializers.ModelSerializer):
                     actor=None,
                     payload={"status": ride.status, "rider_id": str(ride.rider_id)},
                 )
+                try:
+                    publish_ride_event(
+                        ride,
+                        "RIDE_AUTO_ASSIGNED",
+                        {"status": ride.status, "rider_id": str(ride.rider_id)},
+                    )
+                except Exception:
+                    pass
         return ride
 
 
