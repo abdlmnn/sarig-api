@@ -67,3 +67,58 @@ class RideActionTests(TestCase):
         self.ride.refresh_from_db()
         self.assertEqual(self.ride.status, RideStatus.COMPLETED)
         self.assertIsNotNone(self.ride.completed_at)
+
+    def test_admin_can_assign_eligible_rider(self):
+        self.rider_profile.is_online = True
+        self.rider_profile.is_available = True
+        self.rider_profile.can_do_ride_hailing = True
+        self.rider_profile.vehicle_type = VehicleType.MOTORCYCLE
+        self.rider_profile.save()
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            f"/api/v1/rides/{self.ride.id}/assign/",
+            {"rider_id": str(self.rider_profile.id)},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.status, RideStatus.MATCHED)
+        self.assertEqual(self.ride.rider_id, self.rider_profile.id)
+        self.assertEqual(self.ride.assigned_vehicle_type, VehicleType.MOTORCYCLE)
+
+    def test_assign_rejects_vehicle_mismatch(self):
+        self.rider_profile.is_online = True
+        self.rider_profile.is_available = True
+        self.rider_profile.can_do_ride_hailing = True
+        self.rider_profile.vehicle_type = VehicleType.CAR
+        self.rider_profile.save()
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            f"/api/v1/rides/{self.ride.id}/assign/",
+            {"rider_id": str(self.rider_profile.id)},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_assign_is_idempotent_for_same_rider(self):
+        self.rider_profile.is_online = True
+        self.rider_profile.is_available = True
+        self.rider_profile.can_do_ride_hailing = True
+        self.rider_profile.vehicle_type = VehicleType.MOTORCYCLE
+        self.rider_profile.save()
+        self.client.force_authenticate(user=self.admin)
+
+        first = self.client.post(
+            f"/api/v1/rides/{self.ride.id}/assign/",
+            {"rider_id": str(self.rider_profile.id)},
+            format="json",
+        )
+        second = self.client.post(
+            f"/api/v1/rides/{self.ride.id}/assign/",
+            {"rider_id": str(self.rider_profile.id)},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)

@@ -3,8 +3,11 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.riders.models import RiderProfile
+
 from .models import Ride, RideEvent, RideStatus
-from .serializers import RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
+from .serializers import RideAssignSerializer, RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
+from .services import RideAssignmentService
 
 
 class RideViewSet(viewsets.ModelViewSet):
@@ -66,6 +69,36 @@ class RideViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
         return self._transition_with_status(request, pk, RideStatus.CANCELLED)
+
+    @action(detail=True, methods=["post"], url_path="assign")
+    def assign(self, request, pk=None):
+        ride = self.get_object()
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({"detail": "Only admin/system can assign rides."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Idempotent behavior: same assignment request on already matched ride returns success.
+        if ride.status == RideStatus.MATCHED and ride.rider_id:
+            serializer = RideAssignSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            if ride.rider_id == serializer.validated_data["rider_id"]:
+                return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
+
+        serializer = RideAssignSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        rider = RiderProfile.objects.filter(id=serializer.validated_data["rider_id"]).select_related("user").first()
+        if not rider:
+            return Response({"detail": "Rider not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            ride = RideAssignmentService.assign_rider(ride, rider)
+            RideEvent.objects.create(
+                ride=ride,
+                event_type="RIDE_ASSIGNED",
+                actor=request.user,
+                payload={"rider_id": str(rider.id), "status": ride.status},
+            )
+        except ValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
 
     def _transition_with_status(self, request, pk, new_status: str):
         ride = self.get_object()

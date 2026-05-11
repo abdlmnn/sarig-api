@@ -38,3 +38,6 @@ class RideSerializer(serializers.ModelSerializer):
         model = Ride
         fields = "__all__"
 
+
+class RideAssignSerializer(serializers.Serializer):
+    rider_id = serializers.UUIDField()
