@@ -7,7 +7,7 @@ from apps.riders.models import RiderProfile
 
 from .models import Ride, RideEvent, RideStatus
 from .serializers import RideAssignSerializer, RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
-from .services import RideAssignmentService
+from .services import RideAssignmentService, RideFareService
 
 
 class RideViewSet(viewsets.ModelViewSet):
@@ -108,6 +108,8 @@ class RideViewSet(viewsets.ModelViewSet):
             if new_status == RideStatus.CANCELLED:
                 ride.cancelled_by = request.user
             ride.save()
+            if new_status == RideStatus.COMPLETED:
+                RideFareService.finalize_fare(ride)
             RideEvent.objects.create(
                 ride=ride,
                 event_type=f"STATUS_{new_status}",

@@ -2,6 +2,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.riders.models import RiderProfile
+from apps.rides.models import FareBreakdown
 from apps.rides.models import Ride, RideStatus, VehicleType
 from apps.users.models import Role, User
 
@@ -122,3 +123,41 @@ class RideActionTests(TestCase):
         )
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
+
+    def test_create_ride_generates_estimated_fare_breakdown(self):
+        self.client.force_authenticate(user=self.passenger)
+        res = self.client.post(
+            "/api/v1/rides/",
+            {
+                "requested_vehicle_type": VehicleType.MOTORCYCLE,
+                "pickup_lat": "7.100000",
+                "pickup_lng": "125.100000",
+                "dropoff_lat": "7.200000",
+                "dropoff_lng": "125.200000",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        ride = Ride.objects.get(id=res.data["id"])
+        self.assertGreater(ride.estimated_fare, 0)
+        self.assertTrue(FareBreakdown.objects.filter(ride=ride).exists())
+
+    def test_complete_sets_final_fare(self):
+        self.rider_profile.is_online = True
+        self.rider_profile.is_available = True
+        self.rider_profile.can_do_ride_hailing = True
+        self.rider_profile.vehicle_type = VehicleType.MOTORCYCLE
+        self.rider_profile.save()
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(f"/api/v1/rides/{self.ride.id}/assign/", {"rider_id": str(self.rider_profile.id)}, format="json")
+        self.client.force_authenticate(user=self.rider_user)
+        self.client.post(f"/api/v1/rides/{self.ride.id}/arrive/")
+        self.client.post(f"/api/v1/rides/{self.ride.id}/start/")
+        self.ride.distance_km = 5
+        self.ride.duration_min = 18
+        self.ride.save(update_fields=["distance_km", "duration_min", "updated_at"])
+        complete_res = self.client.post(f"/api/v1/rides/{self.ride.id}/complete/")
+        self.assertEqual(complete_res.status_code, 200)
+        self.ride.refresh_from_db()
+        self.assertIsNotNone(self.ride.final_fare)
+        self.assertGreater(self.ride.final_fare, 0)
