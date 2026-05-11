@@ -200,3 +200,5 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 JOYRIDE_ENABLE_SURGE = os.getenv("JOYRIDE_ENABLE_SURGE", "False").lower() in {"1", "true", "yes", "on"}
 JOYRIDE_SURGE_MULTIPLIER = os.getenv("JOYRIDE_SURGE_MULTIPLIER", "1.00")
 JOYRIDE_REQUEST_TIMEOUT_MINUTES = int(os.getenv("JOYRIDE_REQUEST_TIMEOUT_MINUTES", "5"))
+JOYRIDE_ENABLE_AUTO_MATCHING = os.getenv("JOYRIDE_ENABLE_AUTO_MATCHING", "True").lower() in {"1", "true", "yes", "on"}
+JOYRIDE_MATCHING_MAX_RADIUS_KM = float(os.getenv("JOYRIDE_MATCHING_MAX_RADIUS_KM", "10"))

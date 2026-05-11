@@ -52,3 +52,7 @@ class RideSerializer(serializers.ModelSerializer):
 
 class RideAssignSerializer(serializers.Serializer):
     rider_id = serializers.UUIDField()
+
+
+class RideCancelSerializer(serializers.Serializer):
+    cancel_reason = serializers.CharField(required=False, allow_blank=True, max_length=500)

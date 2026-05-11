@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from apps.riders.models import RiderProfile
 
 from .models import Ride, RideEvent, RideStatus
-from .serializers import RideAssignSerializer, RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
+from .serializers import RideAssignSerializer, RideCancelSerializer, RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
 from .services import RideAssignmentService, RideFareService
 
 
@@ -68,7 +68,14 @@ class RideViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
-        return self._transition_with_status(request, pk, RideStatus.CANCELLED)
+        serializer = RideCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return self._transition_with_status(
+            request,
+            pk,
+            RideStatus.CANCELLED,
+            extra_payload={"cancel_reason": serializer.validated_data.get("cancel_reason", "")},
+        )
 
     @action(detail=True, methods=["post"], url_path="assign")
     def assign(self, request, pk=None):
@@ -100,13 +107,14 @@ class RideViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
 
-    def _transition_with_status(self, request, pk, new_status: str):
+    def _transition_with_status(self, request, pk, new_status: str, extra_payload=None):
         ride = self.get_object()
         try:
             self._enforce_transition_permissions(ride, new_status)
             ride.transition_to(new_status)
             if new_status == RideStatus.CANCELLED:
                 ride.cancelled_by = request.user
+                ride.cancel_reason = (extra_payload or {}).get("cancel_reason", "")
             ride.save()
             if new_status == RideStatus.COMPLETED:
                 RideFareService.finalize_fare(ride)
@@ -117,7 +125,7 @@ class RideViewSet(viewsets.ModelViewSet):
                 ride=ride,
                 event_type=f"STATUS_{new_status}",
                 actor=request.user,
-                payload={"status": new_status},
+                payload={"status": new_status, **(extra_payload or {})},
             )
         except ValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

@@ -34,12 +34,17 @@ class RideActionTests(TestCase):
         self.rider_profile.is_available = False
         self.rider_profile.save(update_fields=["is_available"])
         self.client.force_authenticate(user=self.passenger)
-        res = self.client.post(f"/api/v1/rides/{self.ride.id}/cancel/")
+        res = self.client.post(
+            f"/api/v1/rides/{self.ride.id}/cancel/",
+            {"cancel_reason": "Passenger changed plans"},
+            format="json",
+        )
         self.assertEqual(res.status_code, 200)
         self.ride.refresh_from_db()
         self.rider_profile.refresh_from_db()
         self.assertEqual(self.ride.status, RideStatus.CANCELLED)
         self.assertEqual(self.ride.cancelled_by_id, self.passenger.id)
+        self.assertEqual(self.ride.cancel_reason, "Passenger changed plans")
         self.assertTrue(self.rider_profile.is_available)
 
     def test_non_assigned_rider_cannot_arrive(self):
