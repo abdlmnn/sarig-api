@@ -1,9 +1,10 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from decimal import Decimal
 
 from .models import Ride, RideEvent, RideStatus
-from .services import RideFareService
+from .services import RideAssignmentService, RideFareService
 
 
 class RideCreateSerializer(serializers.ModelSerializer):
@@ -37,6 +38,16 @@ class RideCreateSerializer(serializers.ModelSerializer):
             actor=ride.passenger,
             payload={"status": ride.status},
         )
+        if settings.JOYRIDE_ENABLE_AUTO_MATCHING:
+            prior_status = ride.status
+            ride = RideAssignmentService.auto_assign_best_rider(ride)
+            if ride.status != prior_status and ride.rider_id:
+                RideEvent.objects.create(
+                    ride=ride,
+                    event_type="RIDE_AUTO_ASSIGNED",
+                    actor=None,
+                    payload={"status": ride.status, "rider_id": str(ride.rider_id)},
+                )
         return ride
 
 

@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
+from math import radians, cos, sin, asin, sqrt
 
 from apps.riders.models import RiderProfile
 
@@ -8,6 +9,15 @@ from .models import FareBreakdown, Ride, RideStatus, VehicleType
 
 
 class RideAssignmentService:
+    @staticmethod
+    def haversine_km(lon1, lat1, lon2, lat2):
+        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+        c = 2 * asin(sqrt(a))
+        return 6371 * c
+
     @staticmethod
     def assign_rider(ride: Ride, rider: RiderProfile) -> Ride:
         if ride.status != RideStatus.REQUESTED:
@@ -24,6 +34,43 @@ class RideAssignmentService:
         rider.is_available = False
         rider.save(update_fields=["is_available"])
         return ride
+
+    @classmethod
+    def find_best_rider_for_ride(cls, ride: Ride):
+        candidates = RiderProfile.objects.filter(
+            is_online=True,
+            is_available=True,
+            can_do_ride_hailing=True,
+            vehicle_type=ride.requested_vehicle_type,
+            current_latitude__isnull=False,
+            current_longitude__isnull=False,
+        )
+        best_rider = None
+        min_distance = float("inf")
+        pickup_lat = float(ride.pickup_lat)
+        pickup_lng = float(ride.pickup_lng)
+        max_radius = float(settings.JOYRIDE_MATCHING_MAX_RADIUS_KM)
+
+        for rider in candidates:
+            distance = cls.haversine_km(
+                pickup_lng,
+                pickup_lat,
+                float(rider.current_longitude),
+                float(rider.current_latitude),
+            )
+            if distance <= max_radius and distance < min_distance:
+                min_distance = distance
+                best_rider = rider
+        return best_rider, min_distance if best_rider else None
+
+    @classmethod
+    def auto_assign_best_rider(cls, ride: Ride) -> Ride:
+        if ride.status != RideStatus.REQUESTED or ride.rider_id:
+            return ride
+        rider, _distance = cls.find_best_rider_for_ride(ride)
+        if not rider:
+            return ride
+        return cls.assign_rider(ride, rider)
 
 
 class RideFareService:
