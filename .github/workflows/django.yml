@@ -92,6 +92,8 @@ jobs:
           tests.orders.test_checkout \
           tests.orders.test_merchant_actions \
           tests.payments.test_webhook_security \
+          tests.rides.test_ride_actions \
+          tests.rides.test_ride_expiration \
           tests.riders.test_dispatch \
           tests.users.test_notifications
 

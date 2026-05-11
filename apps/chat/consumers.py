@@ -111,3 +111,86 @@ class ChatConsumer(AsyncWebsocketConsumer):
             sender=self.user,
             content=content
         )
+
+
+class RideChatConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.ride_id = self.scope["url_route"]["kwargs"]["ride_id"]
+        self.room_group_name = f"ride_chat_{self.ride_id}"
+        self.user = self.scope["user"]
+
+        if not self.user.is_authenticated:
+            await self.close()
+            return
+
+        if not await self.check_ride_access():
+            await self.close()
+            return
+
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        message_content = data.get("message")
+        if not message_content:
+            return
+        if not await self.can_send_message():
+            await self.send(text_data=json.dumps({"type": "CHAT_LOCKED", "message": "Ride chat is locked."}))
+            return
+
+        saved_msg = await self.save_ride_message(message_content)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "ride_chat_message",
+                "message": message_content,
+                "sender": self.user.username,
+                "timestamp": str(saved_msg.created_at),
+            },
+        )
+
+    async def ride_chat_message(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "RIDE_CHAT_MESSAGE",
+                    "message": event["message"],
+                    "sender": event["sender"],
+                    "timestamp": event["timestamp"],
+                }
+            )
+        )
+
+    @database_sync_to_async
+    def check_ride_access(self):
+        from apps.rides.models import Ride
+        try:
+            ride = Ride.objects.select_related("rider__user", "passenger").get(id=self.ride_id)
+            return self.user == ride.passenger or (ride.rider and self.user == ride.rider.user)
+        except ObjectDoesNotExist:
+            return False
+
+    @database_sync_to_async
+    def can_send_message(self):
+        from apps.rides.models import Ride, RideStatus
+        try:
+            ride = Ride.objects.get(id=self.ride_id)
+            return ride.status not in [RideStatus.COMPLETED, RideStatus.CANCELLED, RideStatus.EXPIRED]
+        except ObjectDoesNotExist:
+            return False
+
+    @database_sync_to_async
+    def save_ride_message(self, content):
+        from .models import RideChatMessage
+        from apps.rides.models import Ride
+
+        ride = Ride.objects.get(id=self.ride_id)
+        return RideChatMessage.objects.create(
+            ride=ride,
+            sender=self.user,
+            content=content,
+        )

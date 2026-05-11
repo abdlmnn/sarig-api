@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.marketing",
     "apps.chat",
     "apps.reviews",
+    "apps.rides",
     "cloudinary",
     "cloudinary_storage",
 ]
@@ -71,6 +72,12 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
+CELERY_BEAT_SCHEDULE = {
+    "expire-pending-rides-every-minute": {
+        "task": "apps.rides.tasks.expire_pending_rides_task",
+        "schedule": 60.0,
+    },
+}
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -188,3 +195,11 @@ if USE_CLOUDINARY:
     }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Joyride fare defaults (can be overridden by env in deployment)
+JOYRIDE_ENABLE_SURGE = os.getenv("JOYRIDE_ENABLE_SURGE", "False").lower() in {"1", "true", "yes", "on"}
+JOYRIDE_SURGE_MULTIPLIER = os.getenv("JOYRIDE_SURGE_MULTIPLIER", "1.00")
+JOYRIDE_REQUEST_TIMEOUT_MINUTES = int(os.getenv("JOYRIDE_REQUEST_TIMEOUT_MINUTES", "5"))
+JOYRIDE_ENABLE_AUTO_MATCHING = os.getenv("JOYRIDE_ENABLE_AUTO_MATCHING", "True").lower() in {"1", "true", "yes", "on"}
+JOYRIDE_MATCHING_MAX_RADIUS_KM = float(os.getenv("JOYRIDE_MATCHING_MAX_RADIUS_KM", "10"))
+JOYRIDE_RIDER_CANCEL_PENALTY = os.getenv("JOYRIDE_RIDER_CANCEL_PENALTY", "30.00")
