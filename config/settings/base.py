@@ -193,3 +193,4 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Joyride fare defaults (can be overridden by env in deployment)
 JOYRIDE_ENABLE_SURGE = os.getenv("JOYRIDE_ENABLE_SURGE", "False").lower() in {"1", "true", "yes", "on"}
 JOYRIDE_SURGE_MULTIPLIER = os.getenv("JOYRIDE_SURGE_MULTIPLIER", "1.00")
+JOYRIDE_REQUEST_TIMEOUT_MINUTES = int(os.getenv("JOYRIDE_REQUEST_TIMEOUT_MINUTES", "5"))
