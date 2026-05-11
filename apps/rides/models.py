@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 from apps.riders.models import RiderProfile
 
@@ -70,6 +71,15 @@ class Ride(models.Model):
         if new_status not in allowed:
             raise ValidationError(f"Invalid transition from {self.status} to {new_status}.")
         self.status = new_status
+        now = timezone.now()
+        if new_status == RideStatus.MATCHED:
+            self.matched_at = now
+        elif new_status == RideStatus.IN_TRIP:
+            self.started_at = now
+        elif new_status == RideStatus.COMPLETED:
+            self.completed_at = now
+        elif new_status == RideStatus.CANCELLED:
+            self.cancelled_at = now
 
 
 class RideEvent(models.Model):
@@ -96,4 +106,3 @@ class FareBreakdown(models.Model):
     total_fare = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
