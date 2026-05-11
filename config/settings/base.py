@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.marketing",
     "apps.chat",
     "apps.reviews",
+    "apps.rides",
     "cloudinary",
     "cloudinary_storage",
 ]
