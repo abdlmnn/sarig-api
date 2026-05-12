@@ -1,0 +1,11 @@
+@access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc4NTkzOTExLCJpYXQiOjE3Nzg1OTIxMTEsImp0aSI6IjlkYjhiZTMzOGIyMDQ1MWNhOGY1YmQzMzQ0ZTc1YTFkIiwidXNlcl9pZCI6ImIyZTA1MDM1LTZkMjYtNDc5Zi04YmQ4LTNkNjgzOTM1YWU2ZSJ9.7l5YdbNet9IuoNguB0dM-ubUGSVedO6MefnqMZflo1o
+@refresh_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc3ODY3ODUxMSwiaWF0IjoxNzc4NTkyMTExLCJqdGkiOiI4MGYzZGZlMzZlYTA0N2QyOTU4ZjYwNTgzMGIyMTg0ZCIsInVzZXJfaWQiOiJiMmUwNTAzNS02ZDI2LTQ3OWYtOGJkOC0zZDY4MzkzNWFlNmUifQ.rxz0HLcQJvGnsj9Yy_YJn5TIPe75chLvbnajmJcOZpA
+
+POST http://127.0.0.1:8000/api/v1/auth/logout/
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "refresh": "{{refresh_token}}"
+}
+

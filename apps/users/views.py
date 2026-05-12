@@ -9,6 +9,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import viewsets, generics, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -86,3 +89,21 @@ class MeViewSet(viewsets.ViewSet):
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserRegisterSerializer
     permission_classes = []
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        refresh = request.data.get("refresh")
+        if not refresh:
+            raise ValidationError({"refresh": "This field is required."})
+        try:
+            token = RefreshToken(refresh)
+            token.blacklist()
+        except TokenError:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
