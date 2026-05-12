@@ -150,6 +150,15 @@ REST_FRAMEWORK = {
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.NamespaceVersioning",
     "DEFAULT_VERSION": "v1",
     "ALLOWED_VERSIONS": ["v1", "v2"],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("DRF_THROTTLE_ANON", "60/min"),
+        "user": os.getenv("DRF_THROTTLE_USER", "200/min"),
+        "nearby_stores": os.getenv("DRF_THROTTLE_NEARBY_STORES", "30/min"),
+    },
 }
 
 SIMPLE_JWT = {

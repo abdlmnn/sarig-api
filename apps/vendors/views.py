@@ -1,4 +1,5 @@
 from datetime import timedelta
+import logging
 
 from django.conf import settings
 from django.contrib.gis.db.models.functions import Distance
@@ -19,6 +20,8 @@ from apps.users.geo import get_lat_lng
 from .models import Store, BusinessVertical
 from .serializers import StoreSerializer, BusinessVerticalSerializer
 from .permissions import IsMerchantOrAdmin
+
+logger = logging.getLogger(__name__)
 
 class BusinessVerticalViewSet(viewsets.ModelViewSet):
     serializer_class = BusinessVerticalSerializer
@@ -64,8 +67,10 @@ class StoreViewSet(viewsets.ModelViewSet):
                         .annotate(distance=Distance("location_point", user_location))
                         .order_by("distance")
                     )
-                except Exception:
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.warning("StoreViewSet PostGIS geo filter fallback due to invalid input: %s", exc)
+                except Exception as exc:
+                    logger.warning("StoreViewSet PostGIS geo filter fallback due to runtime error: %s", exc)
 
         return queryset
 
@@ -136,6 +141,7 @@ class MerchantAnalyticsView(APIView):
 
 class NearbyStoresView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "nearby_stores"
 
     def get(self, request):
         lat = request.query_params.get("lat")
@@ -171,8 +177,10 @@ class NearbyStoresView(APIView):
                 if radius_f is not None:
                     stores = stores.filter(location_point__distance_lte=(user_point, D(km=radius_f)))
                 stores = stores.annotate(distance=Distance("location_point", user_point)).order_by("distance")
-            except Exception:
-                pass
+            except (ValueError, TypeError) as exc:
+                logger.warning("NearbyStoresView PostGIS fallback due to invalid geo input: %s", exc)
+            except Exception as exc:
+                logger.warning("NearbyStoresView PostGIS fallback due to runtime error: %s", exc)
 
         for store in stores:
             store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")

@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+import logging
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -9,6 +10,8 @@ from .models import Ride, RideEvent, RideStatus
 from .realtime import publish_ride_event
 from .serializers import RideAssignSerializer, RideCancelSerializer, RideCreateSerializer, RideSerializer, RideStatusUpdateSerializer
 from .services import RideAssignmentService, RideFareService
+
+logger = logging.getLogger(__name__)
 
 
 class RideViewSet(viewsets.ModelViewSet):
@@ -72,8 +75,8 @@ class RideViewSet(viewsets.ModelViewSet):
         )
         try:
             publish_ride_event(ride, "RIDER_ACCEPTED", {"status": ride.status})
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to publish RIDER_ACCEPTED event for ride %s: %s", ride.id, exc)
         return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="arrive")
@@ -127,8 +130,8 @@ class RideViewSet(viewsets.ModelViewSet):
             )
             try:
                 publish_ride_event(ride, "RIDE_ASSIGNED", {"rider_id": str(rider.id), "status": ride.status})
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to publish RIDE_ASSIGNED event for ride %s: %s", ride.id, exc)
         except ValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)
@@ -158,8 +161,8 @@ class RideViewSet(viewsets.ModelViewSet):
             )
             try:
                 publish_ride_event(ride, f"STATUS_{new_status}", {"status": new_status, **(extra_payload or {})})
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to publish %s event for ride %s: %s", new_status, ride.id, exc)
         except ValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(RideSerializer(ride).data, status=status.HTTP_200_OK)

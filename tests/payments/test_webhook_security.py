@@ -2,12 +2,14 @@ import hashlib
 import hmac
 import json
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from apps.users.models import User
 from apps.vendors.models import Store, BusinessVertical
 from apps.orders.models import Order
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
+from apps.catalog.models import Category, Product
 
 
 @override_settings(
@@ -49,6 +51,8 @@ class PayMongoWebhookSecurityTests(TestCase):
             status=PaymentStatus.PENDING,
             external_transaction_id="cs_mock_123",
         )
+        category = Category.objects.create(store=store, name="Meals", slug="meals")
+        Product.objects.create(category=category, name="Burger", price=Decimal("100.00"))
 
     @override_settings(PAYMONGO_WEBHOOK_SECRET="topsecret")
     def test_webhook_rejects_missing_signature_when_secret_is_set(self):
@@ -112,3 +116,35 @@ class PayMongoWebhookSecurityTests(TestCase):
         self.assertEqual(second.status_code, 200)
         self.tx.refresh_from_db()
         self.assertEqual(self.tx.status, PaymentStatus.SUCCESS)
+
+    @override_settings(PAYMONGO_WEBHOOK_SECRET="topsecret")
+    @patch("apps.users.notifications.PushNotificationService.notify_order_status")
+    @patch("apps.payments.services.PayMongoService.create_refund")
+    @patch("apps.catalog.services.InventoryService.deduct_stock_for_order")
+    def test_webhook_inventory_conflict_attempts_refund(
+        self, stock_mock, refund_mock, notify_mock
+    ):
+        stock_mock.return_value = (False, "out of stock")
+        refund_mock.return_value = {"status": "success"}
+
+        payload = {
+            "data": {
+                "attributes": {
+                    "type": "checkout_session.payment.paid",
+                    "data": {"id": "cs_mock_123", "attributes": {"payment_id": "pay_1"}},
+                }
+            }
+        }
+        raw = json.dumps(payload).encode("utf-8")
+        signature = hmac.new(b"topsecret", raw, hashlib.sha256).hexdigest()
+        res = self.client.post(
+            "/api/v1/payments/webhooks/paymongo/",
+            data=raw,
+            content_type="application/json",
+            HTTP_PAYMONGO_SIGNATURE=signature,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.tx.refresh_from_db()
+        self.assertEqual(self.tx.status, PaymentStatus.REFUNDED)
+        refund_mock.assert_called_once()
+        notify_mock.assert_called()

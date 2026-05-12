@@ -6,7 +6,9 @@ from django.conf import settings
 import hmac
 import hashlib
 from .models import PaymentTransaction, PaymentStatus
+from .services import PayMongoService
 from apps.orders.models import OrderStatus
+from apps.users.notifications import PushNotificationService
 
 
 class PayMongoWebhookView(APIView):
@@ -102,9 +104,14 @@ class PayMongoWebhookView(APIView):
                 order = payment_tx.order
                 order.status = OrderStatus.CANCELLED
                 order.save()
+                order.broadcast_status_update()
 
-                # TODO: Call PayMongo API to automatically refund the customer's GCash
-                # TODO: Send a Push Notification apologizing to the customer.
+                self._attempt_refund_and_notify(
+                    payment_tx=payment_tx,
+                    customer=order.customer,
+                    order_id=order.id,
+                    reason="inventory_conflict",
+                )
 
         elif event_type == 'payment.failed':
             payment_tx.status = PaymentStatus.FAILED
@@ -115,6 +122,25 @@ class PayMongoWebhookView(APIView):
             order.save()
 
         return Response({"status": "Webhook received"})
+
+    def _attempt_refund_and_notify(self, payment_tx, customer, order_id, reason):
+        if payment_tx.status == PaymentStatus.REFUNDED:
+            PushNotificationService.notify_order_status(customer, "REFUNDED", order_id)
+            return
+        if payment_tx.payment_method != "PAYMONGO" or not payment_tx.payment_id:
+            PushNotificationService.notify_order_status(customer, "CANCELLED", order_id)
+            return
+        try:
+            PayMongoService.create_refund(
+                payment_id=payment_tx.payment_id,
+                amount=payment_tx.amount,
+                reason="requested_by_customer",
+            )
+            payment_tx.status = PaymentStatus.REFUNDED
+            payment_tx.save(update_fields=["status", "updated_at"])
+            PushNotificationService.notify_order_status(customer, "REFUNDED", order_id)
+        except Exception:
+            PushNotificationService.notify_order_status(customer, "CANCELLED", order_id)
 
     def _is_valid_signature(self, payload_body, signature_header):
         secret = getattr(settings, "PAYMONGO_WEBHOOK_SECRET", "") or ""
