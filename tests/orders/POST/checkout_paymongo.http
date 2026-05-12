@@ -1,0 +1,26 @@
+@token=YOUR_JWT_ACCESS_TOKEN
+@store_id=PASTE_STORE_UUID_HERE
+@product_id=PASTE_PRODUCT_UUID_HERE
+
+### Checkout via PayMongo (GCash/Maya)
+POST http://127.0.0.1:8000/api/v1/orders/checkout/
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "store_id": "{{store_id}}",
+  "address_text": "Marawi City Hall",
+  "latitude": 8.000000,
+  "longitude": 124.000000,
+  "subtotal": 500.00,
+  "delivery_fee": 45.00,
+  "system_fee": 10.00,
+  "total_amount": 555.00,
+  "payment_method": "PAYMONGO",
+  "items": [
+    {
+      "product_id": "{{product_id}}",
+      "quantity": 2
+    }
+  ]
+}

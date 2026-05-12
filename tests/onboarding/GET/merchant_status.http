@@ -1,0 +1,5 @@
+### Check Merchant Application Status
+# Replace {{application_id}} with the UUID returned from the POST request
+GET http://127.0.0.1:8000/api/v1/onboarding/merchant/status/{{application_id}}/
+Authorization: Bearer {{access_token}}
+Content-Type: application/json

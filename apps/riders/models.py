@@ -1,0 +1,89 @@
+import uuid
+from django.db import models
+from django.conf import settings
+from apps.users.geo import to_wkt_point
+from django.contrib.gis.db import models as gis_models
+from django.contrib.gis.geos import Point
+
+class RiderProfile(models.Model):
+    VEHICLE_CHOICES = [
+        ("MOTORCYCLE", "Motorcycle"),
+        ("BICYCLE", "Bicycle"),
+        ("CAR", "Car"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="rider_profile"
+    )
+    
+    is_online = models.BooleanField(default=False, db_index=True)
+    is_available = models.BooleanField(default=True, db_index=True) # False if on a trip
+    
+    # Capability Flags
+    can_do_delivery = models.BooleanField(default=True, db_index=True)
+    can_do_ride_hailing = models.BooleanField(default=False, db_index=True)
+
+    vehicle_type = models.CharField(
+        max_length=20,
+        choices=VEHICLE_CHOICES,
+        default="MOTORCYCLE"
+    )
+    plate_number = models.CharField(max_length=20, blank=True, null=True)
+    
+    # Real-time Location
+    current_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    current_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    location_wkt = models.CharField(max_length=120, null=True, blank=True, db_index=True)
+    location_point = gis_models.PointField(geography=True, null=True, blank=True)
+    last_location_update = models.DateTimeField(auto_now=True)
+
+    # Wallet
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    def __str__(self):
+        return f"Rider: {self.user.username} (Balance: ₱{self.balance})"
+
+    class Meta:
+        verbose_name = "Rider Profile"
+        verbose_name_plural = "Rider Profiles"
+        indexes = [
+            models.Index(fields=["is_online", "is_available", "can_do_delivery"]),
+            models.Index(fields=["is_online", "is_available", "can_do_ride_hailing"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.location_wkt = to_wkt_point(self.current_latitude, self.current_longitude)
+        if (
+            getattr(settings, "USE_POSTGIS", False)
+            and self.current_latitude is not None
+            and self.current_longitude is not None
+        ):
+            self.location_point = Point(float(self.current_longitude), float(self.current_latitude), srid=4326)
+        super().save(*args, **kwargs)
+
+
+class RiderTransaction(models.Model):
+    TRANSACTION_TYPES = [
+        ("EARNING", "Delivery Earning"),
+        ("WITHDRAWAL", "Cash Withdrawal"),
+        ("BONUS", "Bonus"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    rider = models.ForeignKey(RiderProfile, on_delete=models.CASCADE, related_name="transactions")
+    order = models.ForeignKey("orders.Order", on_delete=models.SET_NULL, null=True, blank=True)
+    
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.transaction_type} - ₱{self.amount} ({self.rider.user.username})"

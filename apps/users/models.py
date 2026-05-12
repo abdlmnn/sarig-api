@@ -1,59 +1,81 @@
+import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
+
+class Role(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
 class User(AbstractUser):
-  email = models.EmailField(unique=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True)
+    phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
+    roles = models.ManyToManyField(Role, blank=True)
 
-class Role(models.IntegerChoices):
-  SEEKER = 1, 'Job Seeker'
-  EMPLOYER = 2, 'Employer'
-  ADMIN = 3, 'Admin'
+    # Simplified role check helpers
+    @property
+    def is_customer(self):
+        return self.roles.filter(name="Customer").exists()
 
-class VerificationLevel(models.IntegerChoices):
-  UNVERIFIED = 0, 'Unverified'
-  COMMUNITY = 1, 'Community Verified'
-  ADMIN = 2, 'Admin Verified'
+    @property
+    def is_merchant(self):
+        return self.roles.filter(name="Merchant").exists()
 
-class Barangay(models.Model):
-  name = models.CharField(
-    max_length=100,
-    unique=True
-  )
+    @property
+    def is_rider(self):
+        return self.roles.filter(name="Rider").exists()
 
-  def __str__(self):
-      return self.name
 
-class UserProfile(models.Model):
-  user = models.OneToOneField(
-    User,
-    on_delete=models.CASCADE,
-    related_name="profile"
-  )
-  role = models.IntegerField(
-    choices=Role.choices,
-    default=Role.SEEKER
-  )
-  phone_number = models.CharField(
-    max_length=20,
-    blank=True
-  )
-  barangay = models.ForeignKey(
-    Barangay,
-    on_delete=models.SET_NULL,
-    null=True,
-    blank=True
-  )
-  verification_status = models.IntegerField(
-    choices=VerificationLevel.choices,
-    default=VerificationLevel.UNVERIFIED
-  )
-  created_at = models.DateField(auto_now_add=True)
+class Profile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="profile",
+    )
+    avatar = models.ImageField(
+        upload_to="avatars/",
+        null=True,
+        blank=True,
+    )
+    date_of_birth = models.DateField(null=True, blank=True)
 
-  class Meta:
-    indexes = [
-      models.Index(fields=["role"]),
-      models.Index(fields=["verification_status"])
-    ]
+    def __str__(self):
+        return f"Profile of {self.user.username}"
 
-  def __str__(self):
-      return f"{self.user.username} profile"
+
+class Address(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="addresses",
+    )
+    label = models.CharField(max_length=50)  # e.g., "Home", "Office"
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    street_address = models.TextField()
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name_plural = "Addresses"
+
+    def __str__(self):
+        return f"{self.label}: {self.street_address[:30]}..."
+
+
+class DeviceToken(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="device_tokens")
+    token = models.TextField(unique=True)
+    device_type = models.CharField(max_length=20, choices=[("ANDROID", "Android"), ("IOS", "iOS")], default="ANDROID")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username}'s Device ({self.device_type})"

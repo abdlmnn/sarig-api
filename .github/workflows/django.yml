@@ -1,0 +1,130 @@
+name: Sarig API CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: sarig_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sarig_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install GIS system dependencies (GDAL/GEOS/PROJ)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gdal-bin libgdal-dev binutils libproj-dev
+        
+    - name: Check Code Formatting & Syntax (Linting)
+      run: |
+        pip install flake8
+        # All exclusion rules are defined in .flake8 config file at the project root.
+        # This is the most reliable cross-platform way to configure flake8.
+        flake8 .
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+        
+    - name: Verify Database Migrations
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+        USE_POSTGIS: "1"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
+      run: |
+        # This guarantees that no developer merges broken database changes.
+        python manage.py makemigrations --check --dry-run
+        python manage.py migrate
+
+    - name: Run Critical Safety Test Suite
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+        USE_POSTGIS: "1"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
+      run: |
+        python manage.py test \
+          tests.orders.test_checkout \
+          tests.orders.test_merchant_actions \
+          tests.payments.test_webhook_security \
+          tests.rides.test_ride_actions \
+          tests.rides.test_ride_expiration \
+          tests.riders.test_dispatch \
+          tests.users.test_notifications
+
+    - name: Run Full Test Suite
+      env:
+        SECRET_KEY: "dummy-key-for-ci"
+        DEBUG: "1"
+        USE_POSTGIS: "1"
+        POSTGRES_DB: sarig_test
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: "5432"
+      run: |
+        python manage.py test
+
+  # deployment:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #   - name: Deploy to Server (Example)
+  #     uses: appleboy/ssh-action@master
+  #     with:
+  #       host: ${{ secrets.SERVER_HOST }}
+  #       username: ${{ secrets.SERVER_USER }}
+  #       key: ${{ secrets.SSH_PRIVATE_KEY }}
+  #       script: |
+  #         cd /path/to/sarig-api
+  #         git pull origin main
+  #         source venv/bin/activate
+  #         pip install -r requirements.txt
+  #         python manage.py migrate
+  #         sudo systemctl restart daphne celery

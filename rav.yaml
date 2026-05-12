@@ -11,3 +11,18 @@ scripts:
 
   shell:
    - python manage.py shell
+
+  clean_db:
+   - python manage.py flush
+
+  check:
+   - python manage.py check
+
+  test:
+   - python manage.py test
+
+  tunnel:
+   - ngrok http 8000
+
+  ngrok-auth:
+   - python -c "import os, subprocess; from dotenv import load_dotenv; load_dotenv(); token=os.getenv('NGROK_AUTHTOKEN'); subprocess.run(['ngrok', 'config', 'add-authtoken', token]) if token else print('Error: NGROK_AUTHTOKEN not found in .env')"
