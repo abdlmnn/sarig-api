@@ -1,13 +1,24 @@
-from rest_framework import viewsets, permissions
+from datetime import timedelta
+
+from django.conf import settings
+from django.contrib.gis.db.models.functions import Distance
+from django.contrib.gis.geos import Point
+from django.contrib.gis.measure import D
+from django.db.models import Avg, Count, F, Sum
+from django.db.models.functions import TruncDate
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.orders.models import Order, OrderItem, OrderStatus
+from apps.riders.services import RiderDispatcherService
+from apps.users.geo import get_lat_lng
 from .models import Store, BusinessVertical
 from .serializers import StoreSerializer, BusinessVerticalSerializer
 from .permissions import IsMerchantOrAdmin
-
-# from django.contrib.gis.geos import Point
-# from django.contrib.gis.db.models.functions import Distance
-# from django.contrib.gis.measure import D
-
 
 class BusinessVerticalViewSet(viewsets.ModelViewSet):
     serializer_class = BusinessVerticalSerializer
@@ -24,28 +35,37 @@ class StoreViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Store.objects.select_related("vertical", "owner")
 
-        # OPTIONAL GEO FILTER (READY FOR FUTURE)
-        # lat = self.request.query_params.get("lat")
-        # lng = self.request.query_params.get("lng")
-        # radius = self.request.query_params.get("radius")
-
-        # if lat and lng and radius:
-        #     user_location = Point(float(lng), float(lat), srid=4326)
-
-        #     queryset = (
-        #         queryset.filter(
-        #             location__distance_lte=(user_location, D(km=float(radius)))
-        #         )
-        #         .annotate(distance=Distance("location", user_location))
-        #         .order_by("distance")
-        #     )
-
         # Own stores only (Filter merchant)
         user = self.request.user
 
         # only own stores unless admin
         if not user.is_staff:
             queryset = queryset.filter(owner=user)
+
+        lat = self.request.query_params.get("lat")
+        lng = self.request.query_params.get("lng")
+        radius = self.request.query_params.get("radius")
+
+        # Optional geo filter for staff/ops listing, dual-mode safe.
+        if lat and lng and radius:
+            try:
+                lat_f = float(lat)
+                lng_f = float(lng)
+                radius_f = float(radius)
+            except (TypeError, ValueError):
+                return queryset
+
+            if getattr(settings, "USE_POSTGIS", False):
+                try:
+                    user_location = Point(lng_f, lat_f, srid=4326)
+                    return (
+                        queryset.filter(location_point__isnull=False)
+                        .filter(location_point__distance_lte=(user_location, D(km=radius_f)))
+                        .annotate(distance=Distance("location_point", user_location))
+                        .order_by("distance")
+                    )
+                except Exception:
+                    pass
 
         return queryset
 
@@ -58,16 +78,6 @@ class StoreViewSet(viewsets.ModelViewSet):
 
         serializer.save(owner=user)
 
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from django.db.models import Sum, Count, F
-from django.db.models.functions import TruncDate
-from django.utils import timezone
-from datetime import timedelta
-from apps.orders.models import Order, OrderStatus, OrderItem
-from django.shortcuts import get_object_or_404
-from apps.users.geo import get_lat_lng
 
 class MerchantAnalyticsView(APIView):
     permission_classes = [IsMerchantOrAdmin]
@@ -130,26 +140,57 @@ class NearbyStoresView(APIView):
     def get(self, request):
         lat = request.query_params.get("lat")
         lng = request.query_params.get("lng")
+        radius = request.query_params.get("radius")
         
         if not lat or not lng:
             return Response({"error": "Latitude and Longitude are required."}, status=400)
+        try:
+            lat_f = float(lat)
+            lng_f = float(lng)
+            radius_f = float(radius) if radius is not None else None
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid latitude/longitude/radius values."}, status=400)
+        if not (-90 <= lat_f <= 90) or not (-180 <= lng_f <= 180):
+            return Response({"error": "Latitude/Longitude out of valid range."}, status=400)
+        if radius_f is not None and radius_f <= 0:
+            return Response({"error": "Radius must be greater than 0."}, status=400)
 
-        from apps.riders.services import RiderDispatcherService
-        
-        stores = Store.objects.filter(is_active=True).select_related('vertical')
-        
+        stores = (
+            Store.objects.filter(is_active=True)
+            .select_related("vertical")
+            .annotate(avg_store_rating=Avg("reviews__store_rating"))
+        )
+
         results = []
+
+        # Prefer PostGIS query path, but keep Haversine fallback for dual-mode rollout.
+        if getattr(settings, "USE_POSTGIS", False):
+            try:
+                user_point = Point(lng_f, lat_f, srid=4326)
+                stores = stores.filter(location_point__isnull=False)
+                if radius_f is not None:
+                    stores = stores.filter(location_point__distance_lte=(user_point, D(km=radius_f)))
+                stores = stores.annotate(distance=Distance("location_point", user_point)).order_by("distance")
+            except Exception:
+                pass
+
         for store in stores:
             store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
-            distance = RiderDispatcherService.haversine(
-                float(lng), float(lat),
-                float(store_lng), float(store_lat)
-            )
-            
-            # Get average rating
-            from django.db.models import Avg
-            from apps.reviews.models import OrderReview
-            avg_rating = OrderReview.objects.filter(store=store).aggregate(Avg('store_rating'))['store_rating__avg'] or 0
+            if hasattr(store, "distance") and store.distance is not None:
+                distance = float(
+                    store.distance.km if hasattr(store.distance, "km") else store.distance
+                )
+            else:
+                distance = RiderDispatcherService.haversine(
+                    lng_f,
+                    lat_f,
+                    float(store_lng),
+                    float(store_lat),
+                )
+                if radius_f is not None and distance > radius_f:
+                    continue
+
+            avg_rating = store.avg_store_rating or 0
 
             results.append({
                 "id": str(store.id),
@@ -162,7 +203,7 @@ class NearbyStoresView(APIView):
                 "logo": store.image.url if store.image else None,
             })
 
-        # Sort by distance
-        results.sort(key=lambda x: x['distance_km'])
+        # Ensure stable ordering when fallback path is used.
+        results.sort(key=lambda x: x["distance_km"])
 
         return Response(results)
