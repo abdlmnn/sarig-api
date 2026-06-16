@@ -22,6 +22,7 @@ Base URL:
 ### Create Store
 `POST /stores/`
 **Auth Required** (Merchant role recommended)
+- Key fields: `vertical`, `name`, `branch_name`, `company_email`, `contact_number`, `delivery_time`, `latitude`, `longitude`, `street_address`, `city`, `barangay`, `province`, `postal_code`, `pinned_address`, `image`.
 
 ### Store Detail
 `GET /stores/{id}/`
@@ -33,4 +34,4 @@ Base URL:
 - **IDs**: All primary keys are **UUIDv4**.
 - **Images**: Stores now support an `image` field.
 - **Ratings**: Initial rating defaults to `5.00`.
-- **Optimization**: Coordinate fields (`latitude`, `longitude`) are indexed for future geospatial queries.
+- **Geo**: `latitude` and `longitude` populate `location_wkt`, and `location_point` when PostGIS is enabled.

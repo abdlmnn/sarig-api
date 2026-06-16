@@ -17,9 +17,24 @@ They submit their applications here. Only when an admin approves them do they ge
 **Payload Requirements (multipart/form-data):**
 - Business Info:
   - `business_name` (string, required)
+  - `owner_first_name` (string, required)
+  - `owner_last_name` (string, required)
+  - `company_email` (email, required)
   - `contact_number` (string, required)
+  - `business_type` (string: `SHOP` or `RESTAURANT`, required)
+  - `delivery_time` (string: `MORNING`, `AFTERNOON`, `EVENING`, or `ALL_DAY`, required)
+  - `branch_name` (string, optional)
 - Business Address:
   - `business_address` (string, required)
+  - `city` (string, required)
+  - `barangay` (string, required)
+  - `province` (string, required)
+  - `postal_code` (string, required)
+  - `street` (string, required)
+- Map Pin / Geo:
+  - `pinned_address` (string, optional)
+  - `latitude` (decimal, required)
+  - `longitude` (decimal, required)
 - Documents:
   - `dti_sec_certificate` (file, required)
   - `mayors_permit` (file, required)

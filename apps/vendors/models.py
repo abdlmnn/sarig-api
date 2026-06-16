@@ -8,6 +8,13 @@ from django.contrib.gis.db import models as gis_models
 from django.contrib.gis.geos import Point
 
 
+class StoreDeliveryTime(models.TextChoices):
+    MORNING = "MORNING", "Morning"
+    AFTERNOON = "AFTERNOON", "Afternoon"
+    EVENING = "EVENING", "Evening"
+    ALL_DAY = "ALL_DAY", "All day"
+
+
 class BusinessVertical(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
@@ -36,6 +43,10 @@ class Store(models.Model):
         related_name="stores",
     )
     name = models.CharField(max_length=255)
+    branch_name = models.CharField(max_length=120, blank=True)
+    company_email = models.EmailField(blank=True)
+    contact_number = models.CharField(max_length=15, blank=True)
+    delivery_time = models.CharField(max_length=20, choices=StoreDeliveryTime.choices, default=StoreDeliveryTime.ALL_DAY)
     
     # Coordinates (DecimalField for now as per user request)
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
@@ -45,6 +56,10 @@ class Store(models.Model):
     
     street_address = models.TextField()
     city = models.CharField(max_length=100)
+    barangay = models.CharField(max_length=100, blank=True)
+    province = models.CharField(max_length=100, blank=True)
+    postal_code = models.CharField(max_length=20, blank=True)
+    pinned_address = models.TextField(blank=True)
     
     commission_rate = models.DecimalField(
         max_digits=5,

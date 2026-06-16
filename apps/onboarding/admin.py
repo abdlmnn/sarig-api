@@ -5,10 +5,19 @@ from .services import ApplicationService
 
 @admin.register(MerchantApplication)
 class MerchantApplicationAdmin(admin.ModelAdmin):
-    list_display = ("business_name", "applicant", "status", "created_at")
-    list_filter = ("status", "created_at")
-    search_fields = ("business_name", "applicant__username", "applicant__email")
+    list_display = ("business_name", "business_type", "city", "applicant", "status", "created_at")
+    list_filter = ("status", "business_type", "delivery_time", "city", "created_at")
+    search_fields = ("business_name", "branch_name", "company_email", "contact_number", "applicant__username", "applicant__email")
     readonly_fields = ("id", "applicant", "created_at", "updated_at")
+    fieldsets = (
+        ("Application", {"fields": ("id", "applicant", "status", "admin_remarks")}),
+        ("Business Info", {"fields": ("business_name", "branch_name", "business_type", "delivery_time")}),
+        ("Owner Contact", {"fields": ("owner_first_name", "owner_last_name", "company_email", "contact_number")}),
+        ("Business Address", {"fields": ("business_address", "street", "barangay", "city", "province", "postal_code")}),
+        ("Map Pin", {"fields": ("pinned_address", "latitude", "longitude")}),
+        ("Documents", {"fields": ("dti_sec_certificate", "mayors_permit", "bir_cor", "halal_certification", "owner_valid_id", "storefront_photo")}),
+        ("Timestamps", {"fields": ("created_at", "updated_at")}),
+    )
     actions = ["approve_selected", "reject_selected"]
 
     def approve_selected(self, request, queryset):

@@ -12,12 +12,38 @@ class ApplicationStatus(models.TextChoices):
     REQUEST_CHANGES = "REQUEST_CHANGES", "Changes Requested"
 
 
+class BusinessType(models.TextChoices):
+    SHOP = "SHOP", "Shop"
+    RESTAURANT = "RESTAURANT", "Restaurant"
+
+
+class DeliveryTime(models.TextChoices):
+    MORNING = "MORNING", "Morning"
+    AFTERNOON = "AFTERNOON", "Afternoon"
+    EVENING = "EVENING", "Evening"
+    ALL_DAY = "ALL_DAY", "All day"
+
+
 class MerchantApplication(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     applicant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="merchant_applications")
     business_name = models.CharField(max_length=255)
-    business_address = models.TextField()
+    owner_first_name = models.CharField(max_length=100, blank=True)
+    owner_last_name = models.CharField(max_length=100, blank=True)
+    company_email = models.EmailField(blank=True)
     contact_number = models.CharField(max_length=15)
+    business_type = models.CharField(max_length=20, choices=BusinessType.choices, default=BusinessType.RESTAURANT)
+    delivery_time = models.CharField(max_length=20, choices=DeliveryTime.choices, default=DeliveryTime.ALL_DAY)
+    branch_name = models.CharField(max_length=120, blank=True)
+    business_address = models.TextField()
+    city = models.CharField(max_length=100, blank=True)
+    barangay = models.CharField(max_length=100, blank=True)
+    province = models.CharField(max_length=100, blank=True)
+    postal_code = models.CharField(max_length=20, blank=True)
+    street = models.CharField(max_length=255, blank=True)
+    pinned_address = models.TextField(blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     dti_sec_certificate = models.FileField(upload_to="onboarding/merchants/dti_sec/")
     mayors_permit = models.FileField(upload_to="onboarding/merchants/mayors_permit/")
     bir_cor = models.FileField(upload_to="onboarding/merchants/bir_cor/", blank=True, null=True)
