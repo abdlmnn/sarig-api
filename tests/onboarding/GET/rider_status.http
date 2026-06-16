@@ -1,0 +1,6 @@
+### Check Rider Application Status
+# Replace {{application_id}} with the UUID returned from rider apply POST
+GET http://127.0.0.1:8000/api/v1/onboarding/rider/status/{{application_id}}/
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+

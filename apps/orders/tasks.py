@@ -2,9 +2,33 @@ from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta
 from .models import Order, OrderStatus
+from apps.payments.models import PaymentMethod, PaymentStatus
+from apps.payments.services import PayMongoService
+from apps.users.notifications import PushNotificationService
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _attempt_order_refund(order):
+    payment_tx = order.payment_attempts.filter(
+        status=PaymentStatus.SUCCESS,
+        payment_method=PaymentMethod.PAYMONGO,
+    ).first()
+    if not payment_tx or not payment_tx.payment_id:
+        return False
+    try:
+        PayMongoService.create_refund(
+            payment_id=payment_tx.payment_id,
+            amount=payment_tx.amount,
+            reason="requested_by_customer",
+        )
+        payment_tx.status = PaymentStatus.REFUNDED
+        payment_tx.save(update_fields=["status", "updated_at"])
+        return True
+    except Exception as exc:
+        logger.warning("Auto-refund failed for order %s: %s", order.id, exc)
+        return False
 
 @shared_task
 def auto_cancel_stale_orders():
@@ -26,11 +50,10 @@ def auto_cancel_stale_orders():
             order.save()
             order.broadcast_status_update()
             
-            # TODO: Trigger automatic refund if paid via PayMongo
-            from apps.users.notifications import PushNotificationService
+            refunded = _attempt_order_refund(order)
             PushNotificationService.notify_order_status(
                 order.customer, 
-                "CANCELLED", 
+                "REFUNDED" if refunded else "CANCELLED",
                 order.id
             )
             
@@ -48,8 +71,12 @@ def auto_cancel_stale_order(order_id):
         order.save()
         order.broadcast_status_update()
         
-        from apps.users.notifications import PushNotificationService
-        PushNotificationService.notify_order_status(order.customer, "CANCELLED", order.id)
+        refunded = _attempt_order_refund(order)
+        PushNotificationService.notify_order_status(
+            order.customer,
+            "REFUNDED" if refunded else "CANCELLED",
+            order.id,
+        )
         
         return f"Order {order_id} auto-cancelled."
     except Order.DoesNotExist:

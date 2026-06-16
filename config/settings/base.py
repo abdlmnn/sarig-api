@@ -66,8 +66,12 @@ CHANNEL_LAYERS = {
 
 # --- Celery Configuration ---
 # Supports Redis by default, but you can override with RabbitMQ (amqp://) on Windows if preferred.
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+)
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+)
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -150,6 +154,15 @@ REST_FRAMEWORK = {
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.NamespaceVersioning",
     "DEFAULT_VERSION": "v1",
     "ALLOWED_VERSIONS": ["v1", "v2"],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("DRF_THROTTLE_ANON", "60/min"),
+        "user": os.getenv("DRF_THROTTLE_USER", "200/min"),
+        "nearby_stores": os.getenv("DRF_THROTTLE_NEARBY_STORES", "30/min"),
+    },
 }
 
 SIMPLE_JWT = {
@@ -169,7 +182,16 @@ SIMPLE_JWT = {
 
 API_V1_SUNSET = os.getenv("API_V1_SUNSET", "2026-12-31")
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -181,8 +203,18 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-USE_CLOUDINARY = os.getenv("USE_CLOUDINARY", "False").lower() in {"1", "true", "yes", "on"}
-ENABLE_FCM_PUSH = os.getenv("ENABLE_FCM_PUSH", "False").lower() in {"1", "true", "yes", "on"}
+USE_CLOUDINARY = os.getenv("USE_CLOUDINARY", "False").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+ENABLE_FCM_PUSH = os.getenv("ENABLE_FCM_PUSH", "False").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
 
 if USE_CLOUDINARY:
@@ -197,9 +229,18 @@ if USE_CLOUDINARY:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Joyride fare defaults (can be overridden by env in deployment)
-JOYRIDE_ENABLE_SURGE = os.getenv("JOYRIDE_ENABLE_SURGE", "False").lower() in {"1", "true", "yes", "on"}
+JOYRIDE_ENABLE_SURGE = os.getenv("JOYRIDE_ENABLE_SURGE", "False").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 JOYRIDE_SURGE_MULTIPLIER = os.getenv("JOYRIDE_SURGE_MULTIPLIER", "1.00")
 JOYRIDE_REQUEST_TIMEOUT_MINUTES = int(os.getenv("JOYRIDE_REQUEST_TIMEOUT_MINUTES", "5"))
-JOYRIDE_ENABLE_AUTO_MATCHING = os.getenv("JOYRIDE_ENABLE_AUTO_MATCHING", "True").lower() in {"1", "true", "yes", "on"}
-JOYRIDE_MATCHING_MAX_RADIUS_KM = float(os.getenv("JOYRIDE_MATCHING_MAX_RADIUS_KM", "10"))
+JOYRIDE_ENABLE_AUTO_MATCHING = os.getenv(
+    "JOYRIDE_ENABLE_AUTO_MATCHING", "True"
+).lower() in {"1", "true", "yes", "on"}
+JOYRIDE_MATCHING_MAX_RADIUS_KM = float(
+    os.getenv("JOYRIDE_MATCHING_MAX_RADIUS_KM", "10")
+)
 JOYRIDE_RIDER_CANCEL_PENALTY = os.getenv("JOYRIDE_RIDER_CANCEL_PENALTY", "30.00")

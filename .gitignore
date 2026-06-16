@@ -53,8 +53,8 @@ Thumbs.db
 kit/
 
 # --- Private Business Documentation ---
-# Strategy, plans, notes, and completed logs stay off GitHub.
-# Only the API reference docs are safe to publish.
-docs/
+# Keep all docs private by default.
+docs/**
+# Allow only public API reference docs in GitHub.
 !docs/api/
 !docs/api/**

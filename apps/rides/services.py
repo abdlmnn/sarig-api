@@ -3,10 +3,13 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from math import radians, cos, sin, asin, sqrt
 from django.db.models import F
+import logging
 
 from apps.riders.models import RiderProfile
 
 from .models import FareBreakdown, Ride, RideStatus, VehicleType
+
+logger = logging.getLogger(__name__)
 
 
 class RideAssignmentService:
@@ -69,9 +72,9 @@ class RideAssignmentService:
                 if best:
                     km = float(best.distance.km if hasattr(best.distance, "km") else best.distance)
                     return best, km
-            except Exception:
-                # Fall back to haversine path safely.
-                pass
+            except Exception as exc:
+                # Fall back to haversine path safely, but keep visibility for ops.
+                logger.warning("RideAssignmentService PostGIS fallback activated: %s", exc)
 
         for rider in candidates:
             distance = cls.haversine_km(

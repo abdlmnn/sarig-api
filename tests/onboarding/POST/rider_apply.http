@@ -1,0 +1,35 @@
+### Apply to be a Rider (Requires Auth and multipart/form-data)
+POST http://127.0.0.1:8000/api/v1/onboarding/rider/apply/
+Authorization: Bearer {{access_token}}
+Content-Type: multipart/form-data; boundary=boundary123
+
+--boundary123
+Content-Disposition: form-data; name="vehicle_type"
+
+MOTORCYCLE
+--boundary123
+Content-Disposition: form-data; name="plate_number"
+
+ABC-1234
+--boundary123
+Content-Disposition: form-data; name="professional_drivers_license"; filename="license.jpg"
+Content-Type: image/jpeg
+
+<dummy data>
+--boundary123
+Content-Disposition: form-data; name="lto_or_cr"; filename="orcr.pdf"
+Content-Type: application/pdf
+
+<dummy data>
+--boundary123
+Content-Disposition: form-data; name="nbi_clearance"; filename="nbi.pdf"
+Content-Type: application/pdf
+
+<dummy data>
+--boundary123
+Content-Disposition: form-data; name="barangay_clearance"; filename="barangay.pdf"
+Content-Type: application/pdf
+
+<dummy data>
+--boundary123--
+

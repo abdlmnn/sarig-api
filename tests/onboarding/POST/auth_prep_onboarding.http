@@ -1,0 +1,52 @@
+@base=http://127.0.0.1:8000/api/v1
+
+### 1) Register test user for Merchant onboarding
+POST {{base}}/users/register/
+Content-Type: application/json
+
+{
+  "username": "merchant_applicant_1",
+  "email": "merchant_applicant_1@test.com",
+  "phone_number": "09170000001",
+  "password": "pw12345",
+  "first_name": "Merchant",
+  "last_name": "Applicant"
+}
+
+###
+
+### 2) Login and copy access token
+POST {{base}}/auth/token/
+Content-Type: application/json
+
+{
+  "username": "merchant_applicant_1",
+  "password": "pw12345"
+}
+
+###
+
+### 3) Register test user for Rider onboarding
+POST {{base}}/users/register/
+Content-Type: application/json
+
+{
+  "username": "rider_applicant_1",
+  "email": "rider_applicant_1@test.com",
+  "phone_number": "09170000002",
+  "password": "pw12345",
+  "first_name": "Rider",
+  "last_name": "Applicant"
+}
+
+###
+
+### 4) Login and copy access token
+POST {{base}}/auth/token/
+Content-Type: application/json
+
+{
+  "username": "rider_applicant_1",
+  "password": "pw12345"
+}
+

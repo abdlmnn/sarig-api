@@ -15,15 +15,21 @@ They submit their applications here. Only when an admin approves them do they ge
 **Auth Required:** Yes (JWT)
 **Description:** Submit a new restaurant or store application.
 **Payload Requirements (multipart/form-data):**
-- `business_name` (string)
-- `business_address` (string)
-- `contact_number` (string)
-- `dti_sec_certificate` (file)
-- `mayors_permit` (file)
-- `bir_cor` (file, optional)
-- `halal_certification` (file, optional)
-- `owner_valid_id` (file)
-- `storefront_photo` (image file)
+- Business Info:
+  - `business_name` (string, required)
+  - `contact_number` (string, required)
+- Business Address:
+  - `business_address` (string, required)
+- Documents:
+  - `dti_sec_certificate` (file, required)
+  - `mayors_permit` (file, required)
+  - `bir_cor` (file, optional)
+  - `halal_certification` (file, optional)
+  - `owner_valid_id` (file, required)
+  - `storefront_photo` (image file, required)
+
+Detailed field reference:
+- `docs/api/merchant_registration_documentation.md`
 
 ### Check Merchant Application Status
 `GET /merchant/status/{uuid}/`
