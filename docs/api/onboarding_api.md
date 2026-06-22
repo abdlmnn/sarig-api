@@ -45,6 +45,7 @@ They submit their applications here. Only when an admin approves them do they ge
 
 Detailed field reference:
 - `docs/api/merchant_registration_documentation.md`
+- `docs/api/user_merchant_rider_registration_flow.md`
 
 ### Check Merchant Application Status
 `GET /merchant/status/{uuid}/`
@@ -67,6 +68,9 @@ Detailed field reference:
 - `lto_or_cr` (file, optional)
 - `nbi_clearance` (file)
 - `barangay_clearance` (file, optional)
+
+Detailed field reference:
+- `docs/api/user_merchant_rider_registration_flow.md`
 
 ### Check Rider Application Status
 `GET /rider/status/{uuid}/`

@@ -2,6 +2,9 @@
 
 The Riders API handles rider profiles, real-time location tracking, dispatcher assignment, and wallet earnings.
 
+Registration / onboarding flow reference:
+- `docs/api/user_merchant_rider_registration_flow.md`
+
 ## Endpoints
 
 ### 1. Toggle Online Status
