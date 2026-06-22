@@ -26,6 +26,17 @@ from .models import (
 FRONTEND_BASE_URL = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000")
 
 
+def compact_phone(value):
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if digits.startswith("63"):
+        digits = f"+{digits}"
+    elif digits.startswith("0"):
+        digits = f"+63{digits[1:]}"
+    elif digits:
+        digits = f"+{digits}"
+    return digits[:15]
+
+
 def get_application(application_id):
     if application_id.startswith("MR-"):
         return MerchantApplication.objects.get(application_id=application_id)
@@ -172,7 +183,7 @@ class ApplicationService:
             name=application.business_name,
             branch_name=application.branch_name,
             company_email=application.company_email,
-            contact_number=application.contact_number,
+            contact_number=compact_phone(application.contact_number),
             delivery_time=application.delivery_time,
             latitude=application.latitude,
             longitude=application.longitude,
@@ -239,7 +250,7 @@ class ApplicationService:
             username=username,
             email=email,
             password=password,
-            phone_number=application.contact_number if isinstance(application, MerchantApplication) else application.phone_number,
+            phone_number=compact_phone(application.contact_number if isinstance(application, MerchantApplication) else application.phone_number),
         )
         application.applicant = user
         application.save(update_fields=["applicant", "updated_at"])
