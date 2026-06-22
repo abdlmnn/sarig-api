@@ -19,6 +19,7 @@ Base URL:
 `POST /register/`
 - **Body**: `username`, `email`, `phone_number`, `password`, `first_name`, `last_name`
 - **Default Role**: `Customer`
+- **Registration Flow Doc**: `docs/api/user_merchant_rider_registration_flow.md`
 
 ---
 
