@@ -27,6 +27,7 @@ urlpatterns = [
     path("admin/onboarding/applications/<str:application_id>/approve/", AdminApproveApplicationView.as_view(), name="admin-onboarding-application-approve"),
     path("admin/onboarding/applications/<str:application_id>/request-changes/", AdminRequestChangesView.as_view(), name="admin-onboarding-application-request-changes"),
     path("admin/onboarding/applications/<str:application_id>/reject/", AdminRejectApplicationView.as_view(), name="admin-onboarding-application-reject"),
+    path("admin/", include("apps.operations.urls")),
     path("users/", include("apps.users.urls")),
     path("vendors/", include("apps.vendors.urls")),
     path("catalog/", include("apps.catalog.urls")),
