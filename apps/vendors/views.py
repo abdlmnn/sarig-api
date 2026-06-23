@@ -23,7 +23,7 @@ from .permissions import IsMerchantOrAdmin
 
 logger = logging.getLogger(__name__)
 
-class BusinessVerticalViewSet(viewsets.ModelViewSet):
+class BusinessVerticalViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BusinessVerticalSerializer
     permission_classes = [permissions.IsAuthenticated]
 

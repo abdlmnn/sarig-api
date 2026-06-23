@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from apps.common.validators import validate_document_upload, validate_image_upload
+
 from .models import (
     ApplicationEditToken,
     ApplicationStatus,
@@ -68,6 +70,26 @@ class MerchantApplicationSerializer(serializers.ModelSerializer):
     def validate_delivery_time(self, value):
         return normalize_choice(value, DeliveryTime.values, {"ALLDAY": DeliveryTime.ALL_DAY})
 
+    def validate_dti_sec_certificate(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_mayors_permit(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_bir_cor(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_owner_valid_id(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_storefront_photo(self, value):
+        validate_image_upload(value)
+        return value
+
     def validate(self, attrs):
         if not attrs.get("terms_accepted"):
             raise serializers.ValidationError({"terms_accepted": "Terms must be accepted."})
@@ -117,6 +139,30 @@ class RiderApplicationSerializer(serializers.ModelSerializer):
 
     def validate_vehicle_type(self, value):
         return normalize_choice(value, VehicleType.values)
+
+    def validate_vehicle_photo_front(self, value):
+        validate_image_upload(value)
+        return value
+
+    def validate_vehicle_photo_back(self, value):
+        validate_image_upload(value)
+        return value
+
+    def validate_professional_drivers_license(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_lto_or_cr(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_nbi_clearance(self, value):
+        validate_document_upload(value)
+        return value
+
+    def validate_barangay_clearance(self, value):
+        validate_document_upload(value)
+        return value
 
     def validate(self, attrs):
         if not attrs.get("terms_accepted"):

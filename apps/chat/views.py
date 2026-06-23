@@ -7,6 +7,15 @@ from .models import ChatMessage
 from .serializers import ChatMessageSerializer, RideChatMessageSerializer
 from .models import RideChatMessage
 
+
+def mask_phone_number(phone_number):
+    if not phone_number:
+        return None
+    text = str(phone_number)
+    if len(text) <= 4:
+        return "****"
+    return f"{text[:3]}****{text[-2:]}"
+
 class ChatHistoryView(generics.ListAPIView):
     serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -41,14 +50,14 @@ class ChatHistoryView(generics.ListAPIView):
             # If Customer is asking, give them the Rider's phone number
             if order.rider:
                 contact_name = order.rider.get_full_name() or order.rider.username
-                contact_phone = order.rider.phone_number
+                contact_phone = mask_phone_number(order.rider.phone_number)
             else:
                 contact_name = "Waiting for Rider"
                 contact_phone = None
         elif request.user == order.rider:
             # If Rider is asking, give them the Customer's phone number
             contact_name = order.customer.get_full_name() or order.customer.username
-            contact_phone = order.customer.phone_number
+            contact_phone = mask_phone_number(order.customer.phone_number)
             
         return Response({
             "contact_info": {
@@ -90,12 +99,12 @@ class RideChatHistoryView(generics.ListAPIView):
         if request.user == ride.passenger:
             if ride.rider:
                 contact_name = ride.rider.user.get_full_name() or ride.rider.user.username
-                contact_phone = ride.rider.user.phone_number
+                contact_phone = mask_phone_number(ride.rider.user.phone_number)
             else:
                 contact_name = "Waiting for Rider"
         else:
             contact_name = ride.passenger.get_full_name() or ride.passenger.username
-            contact_phone = ride.passenger.phone_number
+            contact_phone = mask_phone_number(ride.passenger.phone_number)
 
         return Response(
             {

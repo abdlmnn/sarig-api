@@ -1,5 +1,42 @@
 from rest_framework import serializers
-from .models import Order, OrderItem
+from .models import DeliveryMethod, Order, OrderItem
+from apps.payments.models import PaymentMethod
+
+
+class CheckoutItemSerializer(serializers.Serializer):
+    product_id = serializers.UUIDField()
+    quantity = serializers.IntegerField(min_value=1, max_value=99, default=1)
+    special_instructions = serializers.CharField(
+        required=False, allow_blank=True, max_length=500
+    )
+
+
+class CheckoutRequestSerializer(serializers.Serializer):
+    store_id = serializers.UUIDField()
+    items = CheckoutItemSerializer(many=True, allow_empty=False)
+    payment_method = serializers.ChoiceField(choices=PaymentMethod.choices)
+    delivery_method = serializers.ChoiceField(
+        choices=DeliveryMethod.choices, default=DeliveryMethod.DELIVERY
+    )
+    address_text = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    promo_code = serializers.CharField(required=False, allow_blank=True, max_length=64)
+
+    def validate_latitude(self, value):
+        if not (-90 <= value <= 90):
+            raise serializers.ValidationError("Latitude out of valid range.")
+        return value
+
+    def validate_longitude(self, value):
+        if not (-180 <= value <= 180):
+            raise serializers.ValidationError("Longitude out of valid range.")
+        return value
+
+    def validate(self, attrs):
+        if attrs["delivery_method"] == DeliveryMethod.DELIVERY and not attrs.get("address_text"):
+            raise serializers.ValidationError({"address_text": "Address is required for delivery."})
+        return attrs
 
 
 class OrderItemSerializer(serializers.ModelSerializer):

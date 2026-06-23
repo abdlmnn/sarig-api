@@ -28,6 +28,23 @@ from .serializers import (
 from .services import ApplicationService, application_type, get_application
 
 
+MERCHANT_DOCUMENT_FIELDS = {
+    "dti_sec_certificate",
+    "mayors_permit",
+    "bir_cor",
+    "owner_valid_id",
+    "storefront_photo",
+}
+RIDER_DOCUMENT_FIELDS = {
+    "vehicle_photo_front",
+    "vehicle_photo_back",
+    "professional_drivers_license",
+    "lto_or_cr",
+    "nbi_clearance",
+    "barangay_clearance",
+}
+
+
 def get_application_or_404(application_id):
     try:
         return get_application(application_id)
@@ -93,6 +110,7 @@ class MerchantApplicationCreateView(generics.CreateAPIView):
     serializer_class = MerchantApplicationSerializer
     permission_classes = [permissions.AllowAny]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = "onboarding"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -109,6 +127,7 @@ class RiderApplicationCreateView(generics.CreateAPIView):
     serializer_class = RiderApplicationSerializer
     permission_classes = [permissions.AllowAny]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = "onboarding"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -123,6 +142,7 @@ class RiderApplicationCreateView(generics.CreateAPIView):
 
 class MerchantStatusCheckView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "onboarding"
 
     def post(self, request):
         serializer = ApplicationIdSerializer(data=request.data)
@@ -133,6 +153,7 @@ class MerchantStatusCheckView(APIView):
 
 class RiderStatusCheckView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "onboarding"
 
     def post(self, request):
         serializer = ApplicationIdSerializer(data=request.data)
@@ -240,6 +261,13 @@ class AdminDocumentView(APIView):
 
     def get(self, request, application_id, document_key):
         application = get_application_or_404(application_id)
+        allowed_fields = (
+            MERCHANT_DOCUMENT_FIELDS
+            if isinstance(application, MerchantApplication)
+            else RIDER_DOCUMENT_FIELDS
+        )
+        if document_key not in allowed_fields:
+            return Response({"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND)
         document = getattr(application, document_key, None)
         if not document:
             return Response({"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -298,6 +326,7 @@ class AdminRejectApplicationView(APIView):
 class ApplicationEditTokenView(APIView):
     permission_classes = [permissions.AllowAny]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = "onboarding"
 
     def get_token(self, token):
         edit_token = get_object_or_404(ApplicationEditToken, token=token)
@@ -339,6 +368,7 @@ class ApplicationEditTokenView(APIView):
 
 class AccountSetupView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "onboarding"
 
     def get(self, request, token):
         setup_token = get_object_or_404(AccountSetupToken, token=token)

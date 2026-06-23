@@ -1,4 +1,6 @@
 from .serializers import (
+    AdminLoginSerializer,
+    MerchantLoginSerializer,
     UserSerializer,
     ProfileSerializer,
     AddressSerializer,
@@ -89,10 +91,31 @@ class MeViewSet(viewsets.ViewSet):
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserRegisterSerializer
     permission_classes = []
+    throttle_scope = "registration"
+
+
+class ScopedLoginView(APIView):
+    permission_classes = []
+    serializer_class = None
+    throttle_scope = "auth"
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+class AdminLoginView(ScopedLoginView):
+    serializer_class = AdminLoginSerializer
+
+
+class MerchantLoginView(ScopedLoginView):
+    serializer_class = MerchantLoginSerializer
 
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_scope = "auth"
 
     def post(self, request):
         refresh = request.data.get("refresh")

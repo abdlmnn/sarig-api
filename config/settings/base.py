@@ -5,7 +5,7 @@ from datetime import timedelta
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-load_dotenv(BASE_DIR / ".env", override=True)
+load_dotenv(BASE_DIR / ".env", override=False)
 
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
@@ -158,11 +158,18 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": os.getenv("DRF_THROTTLE_ANON", "60/min"),
         "user": os.getenv("DRF_THROTTLE_USER", "200/min"),
         "nearby_stores": os.getenv("DRF_THROTTLE_NEARBY_STORES", "30/min"),
+        "auth": os.getenv("DRF_THROTTLE_AUTH", "10/min"),
+        "registration": os.getenv("DRF_THROTTLE_REGISTRATION", "5/hour"),
+        "onboarding": os.getenv("DRF_THROTTLE_ONBOARDING", "10/hour"),
+        "checkout": os.getenv("DRF_THROTTLE_CHECKOUT", "20/hour"),
+        "payment_webhook": os.getenv("DRF_THROTTLE_PAYMENT_WEBHOOK", "120/min"),
+        "search": os.getenv("DRF_THROTTLE_SEARCH", "60/min"),
     },
 }
 
@@ -182,6 +189,7 @@ SIMPLE_JWT = {
 
 
 API_V1_SUNSET = os.getenv("API_V1_SUNSET", "2026-12-31")
+ADMIN_URL_PATH = os.getenv("ADMIN_URL_PATH", "admin/")
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
@@ -217,6 +225,14 @@ ENABLE_FCM_PUSH = os.getenv("ENABLE_FCM_PUSH", "False").lower() in {
     "on",
 }
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
+PAYMONGO_WEBHOOK_SECRET = os.getenv("PAYMONGO_WEBHOOK_SECRET", "")
+PAYMONGO_SECRET_KEY = os.getenv("PAYMONGO_SECRET_KEY", "")
+PAYMONGO_USE_MOCK = os.getenv("PAYMONGO_USE_MOCK", str(DEBUG)).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 if USE_CLOUDINARY:
     # Use Cloudinary in production

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.common.validators import validate_image_upload
 from .models import BusinessVertical, Store
 
 
@@ -36,10 +37,21 @@ class StoreSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ("owner", "rating", "created_at", "updated_at")
+        read_only_fields = (
+            "owner",
+            "commission_rate",
+            "is_active",
+            "rating",
+            "created_at",
+            "updated_at",
+        )
 
     def create(self, validated_data):
         request = self.context.get("request")
         if request and hasattr(request, "user"):
             validated_data["owner"] = request.user
         return super().create(validated_data)
+
+    def validate_image(self, value):
+        validate_image_upload(value)
+        return value

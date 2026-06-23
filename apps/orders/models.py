@@ -1,8 +1,12 @@
 import uuid
+import logging
 from django.db import models
 from django.conf import settings
 from apps.vendors.models import Store
 from apps.catalog.models import Product
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrderStatus(models.TextChoices):
@@ -79,25 +83,28 @@ class Order(models.Model):
         from asgiref.sync import async_to_sync
         
         channel_layer = get_channel_layer()
-        # 1. Notify Tracking Group (Mobile Map)
-        async_to_sync(channel_layer.group_send)(
-            f"order_{self.id}",
-            {
-                "type": "status_update",
-                "status": self.status,
-            }
-        )
+        try:
+            # 1. Notify Tracking Group (Mobile Map)
+            async_to_sync(channel_layer.group_send)(
+                f"order_{self.id}",
+                {
+                    "type": "status_update",
+                    "status": self.status,
+                }
+            )
 
-        # 2. Notify Chat Group (To close the chat UI)
-        async_to_sync(channel_layer.group_send)(
-            f"chat_{self.id}",
-            {
-                "type": "chat_message",
-                "message": f"SYSTEM: Order is {self.status}. Chat is now closed.",
-                "sender": "System",
-                "timestamp": str(self.updated_at)
-            }
-        )
+            # 2. Notify Chat Group (To close the chat UI)
+            async_to_sync(channel_layer.group_send)(
+                f"chat_{self.id}",
+                {
+                    "type": "chat_message",
+                    "message": f"SYSTEM: Order is {self.status}. Chat is now closed.",
+                    "sender": "System",
+                    "timestamp": str(self.updated_at)
+                }
+            )
+        except Exception as exc:
+            logger.warning("Failed to broadcast order status update for order %s: %s", self.id, exc)
 
 
 class OrderItem(models.Model):

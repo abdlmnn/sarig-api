@@ -38,11 +38,24 @@ from apps.users.geo import get_lat_lng
 
 class GlobalProductSearchView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "search"
 
     def get(self, request):
         query = request.query_params.get("q", "")
         lat = request.query_params.get("lat")
         lng = request.query_params.get("lng")
+        has_location = lat not in (None, "") or lng not in (None, "")
+
+        if has_location:
+            if not lat or not lng:
+                return Response({"error": "Latitude and longitude must be provided together."}, status=400)
+            try:
+                lat_f = float(lat)
+                lng_f = float(lng)
+            except (TypeError, ValueError):
+                return Response({"error": "Invalid latitude/longitude values."}, status=400)
+            if not (-90 <= lat_f <= 90) or not (-180 <= lng_f <= 180):
+                return Response({"error": "Latitude/longitude out of valid range."}, status=400)
         
         # 1. Search Products
         products = Product.objects.select_related('category__store', 'category').filter(
@@ -57,10 +70,10 @@ class GlobalProductSearchView(APIView):
             distance = None
             
             # 2. Calculate Distance if user location provided
-            if lat and lng:
+            if has_location:
                 store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
                 distance = RiderDispatcherService.haversine(
-                    float(lng), float(lat),
+                    lng_f, lat_f,
                     float(store_lng), float(store_lat)
                 )
             
@@ -75,7 +88,7 @@ class GlobalProductSearchView(APIView):
             })
 
         # 3. Sort by Distance if possible
-        if lat and lng:
+        if has_location:
             results.sort(key=lambda x: x['distance_km'] or 999)
 
         return Response(results)
@@ -83,6 +96,7 @@ class GlobalProductSearchView(APIView):
 
 class ProductComparisonView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "search"
 
     def get(self, request):
         product_ids = request.query_params.getlist("ids") # Expecting ?ids=uuid1&ids=uuid2

@@ -1,14 +1,20 @@
 import os
 import requests
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 class PayMongoService:
     BASE_URL = "https://api.paymongo.com/v1"
 
+    @staticmethod
+    def _is_production_settings():
+        return str(getattr(settings, "SETTINGS_MODULE", "")).endswith(".prod")
+
     @classmethod
     def get_headers(cls):
-        # In a real app, use environment variables for API keys
-        api_key = os.getenv("PAYMONGO_SECRET_KEY", "sk_test_placeholder")
+        api_key = getattr(settings, "PAYMONGO_SECRET_KEY", "") or os.getenv("PAYMONGO_SECRET_KEY", "")
+        if not api_key:
+            raise ImproperlyConfigured("PAYMONGO_SECRET_KEY is required for PayMongo API calls.")
         import base64
         auth = base64.b64encode(f"{api_key}:".encode()).decode()
         return {
@@ -46,14 +52,22 @@ class PayMongoService:
             }
         }
 
-        # In a real scenario, we'd make the actual request
-        # response = requests.post(url, json=payload, headers=cls.get_headers())
-        # return response.json()
+        if getattr(settings, "PAYMONGO_USE_MOCK", settings.DEBUG):
+            if cls._is_production_settings():
+                raise ImproperlyConfigured("PAYMONGO_USE_MOCK cannot be enabled in production.")
+            return {
+                "id": "cs_mock_123456789",
+                "checkout_url": "https://checkout.paymongo.com/mock_session"
+            }
 
-        # Returning a mock response for now to keep development smooth
+        response = requests.post(url, json=payload, headers=cls.get_headers(), timeout=15)
+        response.raise_for_status()
+        data = response.json()["data"]
+        attributes = data.get("attributes", {})
         return {
-            "id": "cs_mock_123456789",
-            "checkout_url": "https://checkout.paymongo.com/mock_session"
+            "id": data["id"],
+            "checkout_url": attributes.get("checkout_url") or attributes.get("payments", [{}])[0].get("checkout_url"),
+            "raw": data,
         }
 
     @classmethod
@@ -75,9 +89,11 @@ class PayMongoService:
             }
         }
 
-        # In a real scenario:
-        # response = requests.post(url, json=payload, headers=cls.get_headers())
-        # return response.json()
+        if getattr(settings, "PAYMONGO_USE_MOCK", settings.DEBUG):
+            if cls._is_production_settings():
+                raise ImproperlyConfigured("PAYMONGO_USE_MOCK cannot be enabled in production.")
+            return {"status": "success", "refund_id": "ref_mock_123"}
 
-        # Mock success for now
-        return {"status": "success", "refund_id": "ref_mock_123"}
+        response = requests.post(url, json=payload, headers=cls.get_headers(), timeout=15)
+        response.raise_for_status()
+        return response.json()
