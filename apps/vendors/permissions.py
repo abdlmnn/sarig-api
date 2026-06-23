@@ -11,4 +11,4 @@ class IsMerchantOrAdmin(BasePermission):
         if user.is_staff:
             return True
 
-        return user.roles.filter(name="merchant").exists()
+        return user.roles.filter(name__iexact="Merchant").exists()

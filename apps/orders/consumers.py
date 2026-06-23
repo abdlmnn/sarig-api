@@ -1,12 +1,45 @@
 import json
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from apps.orders.models import Order
+from apps.vendors.models import Store
+
+
+@database_sync_to_async
+def _can_access_store_orders(user, store_id):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return Store.objects.filter(id=store_id).exists()
+    return Store.objects.filter(id=store_id, owner=user).exists()
+
+
+@database_sync_to_async
+def _can_access_order(user, order_id):
+    if not user or not user.is_authenticated:
+        return False
+    queryset = Order.objects.select_related("store", "customer", "rider")
+    try:
+        order = queryset.get(id=order_id)
+    except Order.DoesNotExist:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    return (
+        order.customer_id == user.id
+        or order.rider_id == user.id
+        or order.store.owner_id == user.id
+    )
 
 class MerchantOrderConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.store_id = self.scope["url_route"]["kwargs"]["store_id"]
         self.store_group_name = f"store_{self.store_id}_orders"
 
-        # Join store group
+        if not await _can_access_store_orders(self.scope.get("user"), self.store_id):
+            await self.close(code=4403)
+            return
+
         await self.channel_layer.group_add(
             self.store_group_name,
             self.channel_name
@@ -37,7 +70,10 @@ class OrderConsumer(AsyncWebsocketConsumer):
         self.order_id = self.scope["url_route"]["kwargs"]["order_id"]
         self.order_group_name = f"order_{self.order_id}"
 
-        # Join order group
+        if not await _can_access_order(self.scope.get("user"), self.order_id):
+            await self.close(code=4403)
+            return
+
         await self.channel_layer.group_add(
             self.order_group_name,
             self.channel_name

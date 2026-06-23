@@ -5,14 +5,19 @@ from django.db import transaction
 from django.conf import settings
 import hmac
 import hashlib
+import logging
 from .models import PaymentTransaction, PaymentStatus
 from .services import PayMongoService
 from apps.orders.models import OrderStatus
 from apps.users.notifications import PushNotificationService
 
 
+logger = logging.getLogger(__name__)
+
+
 class PayMongoWebhookView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "payment_webhook"
 
     @transaction.atomic
     def post(self, request):
@@ -72,17 +77,20 @@ class PayMongoWebhookView(APIView):
                 channel_layer = get_channel_layer()
                 store_group = f"store_{order.store.id}_orders"
                 
-                async_to_sync(channel_layer.group_send)(
-                    store_group,
-                    {
-                        "type": "order_alert",
-                        "message": {
-                            "order_id": str(order.id),
-                            "total_amount": str(order.total_amount),
-                            "customer_name": order.customer.get_full_name() or order.customer.username,
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        store_group,
+                        {
+                            "type": "order_alert",
+                            "message": {
+                                "order_id": str(order.id),
+                                "total_amount": str(order.total_amount),
+                                "customer_name": order.customer.get_full_name() or order.customer.username,
+                            }
                         }
-                    }
-                )
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to broadcast paid order alert for order %s: %s", order.id, exc)
 
                 # Handle Auto-Acceptance
                 # Notify Merchant (Push Notification)
@@ -144,9 +152,8 @@ class PayMongoWebhookView(APIView):
 
     def _is_valid_signature(self, payload_body, signature_header):
         secret = getattr(settings, "PAYMONGO_WEBHOOK_SECRET", "") or ""
-        # If no secret is configured, keep non-blocking behavior for local/dev.
         if not secret:
-            return True
+            return bool(settings.DEBUG)
         if not signature_header:
             return False
         digest = hmac.new(secret.encode("utf-8"), payload_body, hashlib.sha256).hexdigest()

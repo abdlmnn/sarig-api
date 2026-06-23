@@ -49,7 +49,7 @@ class MerchantApprovalTests(TestCase):
         self.assertEqual(store.vertical.name, "Restaurant")
         self.assertEqual(store.branch_name, "Main Branch")
         self.assertEqual(store.company_email, "store@example.com")
-        self.assertEqual(store.contact_number, "09123456789")
+        self.assertEqual(store.contact_number, "+639123456789")
         self.assertEqual(store.delivery_time, DeliveryTime.ALL_DAY)
         self.assertEqual(store.city, "Marawi")
         self.assertEqual(store.barangay, "Datu Saber")

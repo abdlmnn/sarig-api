@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class RideViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
         user = self.request.user

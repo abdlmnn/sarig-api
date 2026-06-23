@@ -72,6 +72,7 @@ class RideSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ride
         fields = "__all__"
+        read_only_fields = [field.name for field in Ride._meta.fields]
 
 
 class RideAssignSerializer(serializers.Serializer):

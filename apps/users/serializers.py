@@ -1,4 +1,9 @@
+from django.contrib.auth import authenticate
 from rest_framework import serializers
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.common.validators import validate_image_upload
+
 from .models import Role, User, Profile, Address
 
 
@@ -52,12 +57,76 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         return user
 
 
+class RoleAwareLoginSerializer(serializers.Serializer):
+    identifier = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+
+    required_scope = None
+
+    default_error_messages = {
+        "invalid_credentials": "Unable to log in with the provided credentials.",
+        "inactive": "This account is inactive.",
+        "forbidden": "This account is not allowed to use this login.",
+    }
+
+    def validate(self, attrs):
+        identifier = attrs["identifier"].strip()
+        password = attrs["password"]
+        user = self.get_user_by_identifier(identifier)
+        if not user:
+            self.fail("invalid_credentials")
+
+        authenticated_user = authenticate(
+            request=self.context.get("request"),
+            username=user.username,
+            password=password,
+        )
+        if not authenticated_user:
+            self.fail("invalid_credentials")
+        if not authenticated_user.is_active:
+            self.fail("inactive")
+        if not self.is_allowed(authenticated_user):
+            self.fail("forbidden")
+
+        refresh = RefreshToken.for_user(authenticated_user)
+        return {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "user": UserSerializer(authenticated_user).data,
+            "account_type": self.required_scope,
+        }
+
+    def get_user_by_identifier(self, identifier):
+        if "@" in identifier:
+            return User.objects.filter(email__iexact=identifier).first()
+        return User.objects.filter(username__iexact=identifier).first()
+
+    def is_allowed(self, user):
+        if self.required_scope == "ADMIN":
+            return bool(user.is_superuser)
+        if self.required_scope == "MERCHANT":
+            return bool(user.is_merchant and not user.is_superuser)
+        return True
+
+
+class AdminLoginSerializer(RoleAwareLoginSerializer):
+    required_scope = "ADMIN"
+
+
+class MerchantLoginSerializer(RoleAwareLoginSerializer):
+    required_scope = "MERCHANT"
+
+
 class ProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 
     class Meta:
         model = Profile
         fields = "__all__"
+
+    def validate_avatar(self, value):
+        validate_image_upload(value)
+        return value
 
 
 class AddressSerializer(serializers.ModelSerializer):

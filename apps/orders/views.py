@@ -5,32 +5,43 @@ from django.db import transaction
 from django.db.models import F
 from decimal import Decimal
 from django.shortcuts import get_object_or_404
+import logging
 
-from apps.orders.models import Order, OrderItem, OrderStatus
+from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
 from apps.catalog.models import Product
 from apps.vendors.models import Store
-from .serializers import OrderSerializer
+from .serializers import CheckoutRequestSerializer, OrderSerializer
+
+
+logger = logging.getLogger(__name__)
 
 
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "checkout"
 
     @transaction.atomic
     def post(self, request):
         data = request.data
         user = request.user
 
-        # 1. Validation (Basic)
-        store_id = data.get("store_id")
-        items_data = data.get("items", [])
-        
-        if not store_id or not items_data:
+        serializer = CheckoutRequestSerializer(data=data)
+        if not serializer.is_valid():
+            errors = serializer.errors
+            if "store_id" in errors or "items" in errors:
+                return Response(
+                    {"error": "Store ID and items are required."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             return Response(
-                {"error": "Store ID and items are required."},
+                {"error": errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        data = serializer.validated_data
+        store_id = data["store_id"]
+        items_data = data["items"]
 
         store = get_object_or_404(Store, id=store_id)
 
@@ -46,7 +57,7 @@ class CheckoutView(APIView):
         order_items_to_create = []
 
         for item_data in items_data:
-            product = get_object_or_404(Product, id=item_data["product_id"])
+            product = get_object_or_404(Product.objects.select_for_update(), id=item_data["product_id"])
             
             # Verify product belongs to store
             if product.category.store != store:
@@ -55,7 +66,12 @@ class CheckoutView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            qty = int(item_data.get("quantity", 1))
+            qty = item_data["quantity"]
+            if product.track_inventory and product.stock_quantity is not None and product.stock_quantity < qty:
+                return Response(
+                    {"error": f"Insufficient stock for {product.name}."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             calculated_subtotal += product.price * qty
             
             order_items_to_create.append({
@@ -66,19 +82,19 @@ class CheckoutView(APIView):
             })
 
         # Final amounts (CALCULATED ON SERVER FOR SECURITY)
-        delivery_method = data.get("delivery_method", "DELIVERY")
+        delivery_method = data["delivery_method"]
         
         # 1. System Fee (Flat 10 PHP)
         system_fee = Decimal("10.00")
         
         # 2. Delivery Fee (Base 40 + distance based)
-        if delivery_method == "PICKUP":
+        if delivery_method == DeliveryMethod.PICKUP:
             delivery_fee = Decimal("0.00")
         else:
             # Calculate distance between user provided lat/lng and store
             from apps.riders.services import RiderDispatcherService
             dist = RiderDispatcherService.haversine(
-                float(data.get("longitude", 0)), float(data.get("latitude", 0)),
+                float(data["longitude"]), float(data["latitude"]),
                 float(store.longitude), float(store.latitude)
             )
             # 40 base + 10 per km
@@ -110,8 +126,8 @@ class CheckoutView(APIView):
             store=store,
             delivery_method=delivery_method,
             delivery_address_text=data.get("address_text", ""),
-            delivery_latitude=data.get("latitude", 0),
-            delivery_longitude=data.get("longitude", 0),
+            delivery_latitude=data["latitude"],
+            delivery_longitude=data["longitude"],
             subtotal=calculated_subtotal,
             delivery_fee=delivery_fee,
             system_fee=system_fee,
@@ -135,7 +151,7 @@ class CheckoutView(APIView):
             )
 
         # 4. Handle Payment Logic
-        requested_method = data.get("payment_method")
+        requested_method = data["payment_method"]
 
         if requested_method == PaymentMethod.COD:
             PaymentTransaction.objects.create(
@@ -152,17 +168,20 @@ class CheckoutView(APIView):
             channel_layer = get_channel_layer()
             store_group = f"store_{order.store.id}_orders"
             
-            async_to_sync(channel_layer.group_send)(
-                store_group,
-                {
-                    "type": "order_alert",
-                    "message": {
-                        "order_id": str(order.id),
-                        "total_amount": str(order.total_amount),
-                        "customer_name": order.customer.get_full_name() or order.customer.username,
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    store_group,
+                    {
+                        "type": "order_alert",
+                        "message": {
+                            "order_id": str(order.id),
+                            "total_amount": str(order.total_amount),
+                            "customer_name": order.customer.get_full_name() or order.customer.username,
+                        }
                     }
-                }
-            )
+                )
+            except Exception as exc:
+                logger.warning("Failed to broadcast COD order alert for order %s: %s", order.id, exc)
             
             # Notify Merchant (Push Notification)
             from apps.users.notifications import PushNotificationService
@@ -215,6 +234,7 @@ class CheckoutView(APIView):
 
 class MerchantOrderActionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "checkout"
 
     def post(self, request, order_id):
         action = request.data.get("action")
