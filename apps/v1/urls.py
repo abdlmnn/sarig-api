@@ -50,4 +50,5 @@ urlpatterns = [
     path("chat/", include("apps.chat.urls")),
     path("reviews/", include("apps.reviews.urls")),
     path("rides/", include("apps.rides.urls")),
+    path("locations/", include("apps.locations.urls")),
 ]

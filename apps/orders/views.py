@@ -1,6 +1,7 @@
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F
 from decimal import Decimal
@@ -91,14 +92,18 @@ class CheckoutView(APIView):
         if delivery_method == DeliveryMethod.PICKUP:
             delivery_fee = Decimal("0.00")
         else:
-            # Calculate distance between user provided lat/lng and store
-            from apps.riders.services import RiderDispatcherService
-            dist = RiderDispatcherService.haversine(
-                float(data["longitude"]), float(data["latitude"]),
-                float(store.longitude), float(store.latitude)
+            from apps.locations.services import calculate_delivery_fee, route_estimate
+
+            estimate = route_estimate(
+                {"latitude": store.latitude, "longitude": store.longitude},
+                {"latitude": data["latitude"], "longitude": data["longitude"]},
             )
-            # 40 base + 10 per km
-            delivery_fee = Decimal("40.00") + Decimal(str(round(dist * 10, 2)))
+            if float(estimate["distance_km"]) > settings.DELIVERY_MAX_DISTANCE_KM:
+                return Response(
+                    {"error": "Delivery address is outside the supported distance."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            delivery_fee = calculate_delivery_fee(estimate["distance_km"])
         
         # --- Handle Promo Code ---
         promo_code_str = data.get("promo_code")
