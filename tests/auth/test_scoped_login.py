@@ -52,6 +52,7 @@ class ScopedLoginTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "forbidden")
 
     def test_admin_cannot_use_merchant_login(self):
         response = self.client.post(
@@ -61,3 +62,26 @@ class ScopedLoginTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "forbidden")
+
+    def test_unknown_identifier_returns_frontend_friendly_error(self):
+        response = self.client.post(
+            "/api/v1/auth/admin/login/",
+            {"identifier": "missing@sarig.local", "password": "admin12345"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_credentials")
+        self.assertEqual(response.data["message"], "Invalid username/email or password.")
+
+    def test_wrong_password_returns_same_error_as_unknown_identifier(self):
+        response = self.client.post(
+            "/api/v1/auth/admin/login/",
+            {"identifier": "admin@sarig.local", "password": "wrong-password"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_credentials")
+        self.assertEqual(response.data["message"], "Invalid username/email or password.")

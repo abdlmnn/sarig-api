@@ -259,17 +259,137 @@ page=1
 page_size=20
 ```
 
+Response:
+
+```json
+{
+  "count": 2,
+  "totals": {
+    "merchants": 10,
+    "riders": 10,
+    "ready": 8,
+    "changes": 4,
+    "request_changes": 4
+  },
+  "results": [
+    {
+      "application_id": "MR-1028",
+      "type": "MERCHANT",
+      "status": "PENDING",
+      "submitted_at": "2026-06-23T10:30:00+08:00",
+      "applicant_name": "Hassan Macarambon",
+      "business_name": "Sultan Food House",
+      "barangay": "Banggolo",
+      "city": "Marawi City",
+      "display_name": "Sultan Food House",
+      "service_zone": "Banggolo"
+    }
+  ]
+}
+```
+
 ### Application Detail
 
 `GET /api/v1/admin/onboarding/applications/{application_id}/`
+
+Merchant response is flat:
+
+```json
+{
+  "application_id": "MR-1028",
+  "type": "MERCHANT",
+  "status": "PENDING",
+  "submitted_at": "2026-06-23T10:30:00+08:00",
+  "updated_at": "2026-06-23T10:30:00+08:00",
+  "applicant_name": "Hassan Macarambon",
+  "business_name": "Sultan Food House",
+  "owner_first_name": "Hassan",
+  "owner_last_name": "Macarambon",
+  "company_email": "sultan.food@example.com",
+  "contact_number": "+63 917 420 1188",
+  "business_type": "Restaurant",
+  "delivery_time": "allday",
+  "branch_name": "Main",
+  "business_address": "Amai Pakpak Avenue",
+  "street": "Amai Pakpak Avenue",
+  "barangay": "Banggolo",
+  "city": "Marawi City",
+  "province": "Lanao del Sur",
+  "postal_code": "9700",
+  "latitude": "8.003400",
+  "longitude": "124.283900",
+  "admin_remarks": "",
+  "requested_fields": [],
+  "documents": [
+    {
+      "key": "dti_sec_certificate",
+      "label": "DTI / SEC Certificate",
+      "file_name": "Sultan-Food-DTI.pdf",
+      "file_type": "application/pdf",
+      "file_size": "0.8 MB",
+      "required": true,
+      "view_url": "/api/v1/admin/onboarding/applications/MR-1028/documents/dti_sec_certificate/"
+    }
+  ],
+  "status_history": []
+}
+```
+
+Rider response is also flat and uses rider fields:
+
+```json
+{
+  "application_id": "RD-2044",
+  "type": "RIDER",
+  "status": "PENDING",
+  "submitted_at": "2026-06-23T10:30:00+08:00",
+  "applicant_name": "Ameer S.",
+  "first_name": "Ameer",
+  "last_name": "S.",
+  "email": "ameer.rider@example.com",
+  "phone_number": "+63 906 218 0441",
+  "current_address": "Saduc, Marawi City",
+  "barangay": "Saduc",
+  "city": "Marawi City",
+  "province": "Lanao del Sur",
+  "postal_code": "9700",
+  "emergency_contact_name": "Omar S.",
+  "emergency_contact_number": "+63 915 222 1180",
+  "emergency_contact_relationship": "Brother",
+  "vehicle_type": "MOTORCYCLE",
+  "vehicle_brand": "Honda Click",
+  "plate_number": "MAW 2184",
+  "admin_remarks": "",
+  "requested_fields": [],
+  "documents": [],
+  "status_history": []
+}
+```
+
+Document keys:
+- Merchant: `dti_sec_certificate`, `mayors_permit`, `bir_cor`, `owner_valid_id`, `storefront_photo`
+- Rider: `professional_drivers_license`, `lto_or_cr`, `nbi_clearance`, `barangay_clearance`, `vehicle_photo_front`, `vehicle_photo_back`
 
 ### View Document
 
 `GET /api/v1/admin/onboarding/applications/{application_id}/documents/{document_key}/`
 
+Returns the file directly. Use `?download=1` to force download or `?metadata=1` to return document metadata JSON.
+
 ### Approve Application
 
 `POST /api/v1/admin/onboarding/applications/{application_id}/approve/`
+
+Response:
+
+```json
+{
+  "application_id": "MR-1028",
+  "status": "APPROVED",
+  "message": "Application approved.",
+  "setup_token": "uuid-token"
+}
+```
 
 ### Request Changes
 
@@ -284,6 +404,17 @@ Request body:
 }
 ```
 
+Response:
+
+```json
+{
+  "application_id": "RD-2044",
+  "status": "REQUEST_CHANGES",
+  "message": "Change request sent.",
+  "edit_token": "uuid-token"
+}
+```
+
 ### Reject Application
 
 `POST /api/v1/admin/onboarding/applications/{application_id}/reject/`
@@ -293,6 +424,16 @@ Request body:
 ```json
 {
   "admin_remarks": "Application rejected because required documents could not be verified."
+}
+```
+
+Response:
+
+```json
+{
+  "application_id": "MR-1028",
+  "status": "REJECTED",
+  "message": "Application rejected."
 }
 ```
 

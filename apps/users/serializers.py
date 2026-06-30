@@ -64,7 +64,7 @@ class RoleAwareLoginSerializer(serializers.Serializer):
     required_scope = None
 
     default_error_messages = {
-        "invalid_credentials": "Unable to log in with the provided credentials.",
+        "invalid_credentials": "Invalid username/email or password.",
         "inactive": "This account is inactive.",
         "forbidden": "This account is not allowed to use this login.",
     }
@@ -74,7 +74,7 @@ class RoleAwareLoginSerializer(serializers.Serializer):
         password = attrs["password"]
         user = self.get_user_by_identifier(identifier)
         if not user:
-            self.fail("invalid_credentials")
+            raise self.auth_error("invalid_credentials")
 
         authenticated_user = authenticate(
             request=self.context.get("request"),
@@ -82,11 +82,11 @@ class RoleAwareLoginSerializer(serializers.Serializer):
             password=password,
         )
         if not authenticated_user:
-            self.fail("invalid_credentials")
+            raise self.auth_error("invalid_credentials")
         if not authenticated_user.is_active:
-            self.fail("inactive")
+            raise self.auth_error("inactive")
         if not self.is_allowed(authenticated_user):
-            self.fail("forbidden")
+            raise self.auth_error("forbidden")
 
         refresh = RefreshToken.for_user(authenticated_user)
         return {
@@ -107,6 +107,14 @@ class RoleAwareLoginSerializer(serializers.Serializer):
         if self.required_scope == "MERCHANT":
             return bool(user.is_merchant and not user.is_superuser)
         return True
+
+    def auth_error(self, code):
+        return serializers.ValidationError(
+            {
+                "code": code,
+                "message": self.error_messages[code],
+            }
+        )
 
 
 class AdminLoginSerializer(RoleAwareLoginSerializer):
