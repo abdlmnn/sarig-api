@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from apps.users.models import User, Role
@@ -126,3 +127,54 @@ class CheckoutFlowTests(TestCase):
         res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.data["error"], "Invalid promo code.")
+
+    @patch("apps.locations.services.route_estimate")
+    def test_delivery_checkout_uses_location_service_fee(self, mock_route_estimate):
+        mock_route_estimate.return_value = {
+            "distance_km": Decimal("2.40"),
+            "duration_minutes": 8,
+            "provider": "openrouteservice",
+            "route_geometry": None,
+        }
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "DELIVERY",
+            "address_text": "Home",
+            "latitude": "7.200000",
+            "longitude": "125.460000",
+        }
+
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+
+        self.assertEqual(res.status_code, 201)
+        order = Order.objects.get(id=res.data["order"]["id"])
+        self.assertEqual(order.delivery_fee, Decimal("64.00"))
+        mock_route_estimate.assert_called_once()
+
+    @override_settings(DELIVERY_MAX_DISTANCE_KM=1)
+    @patch("apps.locations.services.route_estimate")
+    def test_delivery_checkout_rejects_far_address(self, mock_route_estimate):
+        mock_route_estimate.return_value = {
+            "distance_km": Decimal("2.40"),
+            "duration_minutes": 8,
+            "provider": "openrouteservice",
+            "route_geometry": None,
+        }
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "DELIVERY",
+            "address_text": "Home",
+            "latitude": "7.200000",
+            "longitude": "125.460000",
+        }
+
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error"], "Delivery address is outside the supported distance.")

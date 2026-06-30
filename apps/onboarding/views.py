@@ -1,3 +1,5 @@
+import mimetypes
+
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.http import FileResponse
@@ -35,6 +37,198 @@ MERCHANT_DOCUMENT_FIELDS = {
     "owner_valid_id",
     "storefront_photo",
 }
+
+MERCHANT_DOCUMENT_META = {
+    "dti_sec_certificate": ("DTI / SEC Certificate", True),
+    "mayors_permit": ("Mayor's Permit", True),
+    "bir_cor": ("BIR COR", False),
+    "owner_valid_id": ("Owner Valid ID", True),
+    "storefront_photo": ("Storefront Photo", True),
+}
+RIDER_DOCUMENT_META = {
+    "professional_drivers_license": ("Professional Driver's License", True),
+    "lto_or_cr": ("LTO OR/CR", False),
+    "nbi_clearance": ("NBI Clearance", True),
+    "barangay_clearance": ("Barangay Clearance", False),
+    "vehicle_photo_front": ("Vehicle Photo Front", True),
+    "vehicle_photo_back": ("Vehicle Photo Back", True),
+}
+
+
+def display_city(city):
+    return "Marawi City" if city == "Marawi" else city
+
+
+def format_file_size(size):
+    if size is None:
+        return None
+    size = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return None
+
+
+def document_meta(application):
+    return MERCHANT_DOCUMENT_META if isinstance(application, MerchantApplication) else RIDER_DOCUMENT_META
+
+
+def document_view_url(application, key):
+    return f"/api/v1/admin/onboarding/applications/{application.application_id}/documents/{key}/"
+
+
+def document_payload(application, key):
+    label, required = document_meta(application)[key]
+    document = getattr(application, key, None)
+    if not document:
+        return {
+            "key": key,
+            "label": label,
+            "file_name": None,
+            "file_type": None,
+            "file_size": None,
+            "required": required,
+            "view_url": None,
+        }
+
+    file_name = document.name.split("/")[-1]
+    file_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+    try:
+        file_size = format_file_size(document.size)
+    except (FileNotFoundError, OSError, ValueError):
+        file_size = None
+    return {
+        "key": key,
+        "label": label,
+        "file_name": file_name,
+        "file_type": file_type,
+        "file_size": file_size,
+        "required": required,
+        "view_url": document_view_url(application, key),
+    }
+
+
+def documents_payload(application):
+    return [document_payload(application, key) for key in document_meta(application)]
+
+
+def list_item_payload(application):
+    payload = {
+        "application_id": application.application_id,
+        "type": application_type(application),
+        "status": application.status,
+        "submitted_at": application.created_at,
+        "applicant_name": application.applicant_name,
+        "business_name": getattr(application, "business_name", None),
+        "barangay": application.barangay,
+        "city": display_city(application.city),
+        "display_name": getattr(application, "business_name", application.applicant_name),
+        "service_zone": application.barangay,
+    }
+    return payload
+
+
+def onboarding_totals():
+    ready_statuses = [ApplicationStatus.PENDING, ApplicationStatus.UNDER_REVIEW]
+    merchant_ready = MerchantApplication.objects.filter(status__in=ready_statuses).count()
+    rider_ready = RiderApplication.objects.filter(status__in=ready_statuses).count()
+    merchant_changes = MerchantApplication.objects.filter(status=ApplicationStatus.REQUEST_CHANGES).count()
+    rider_changes = RiderApplication.objects.filter(status=ApplicationStatus.REQUEST_CHANGES).count()
+    return {
+        "merchants": MerchantApplication.objects.count(),
+        "riders": RiderApplication.objects.count(),
+        "ready": merchant_ready + rider_ready,
+        "changes": merchant_changes + rider_changes,
+        "request_changes": merchant_changes + rider_changes,
+    }
+
+
+def status_history_payload(application):
+    histories = ApplicationStatusHistory.objects.filter(application_id=application.application_id)
+    return [
+        {
+            "from_status": history.from_status,
+            "to_status": history.to_status,
+            "remarks": history.remarks,
+            "actor": history.actor_id,
+            "created_at": history.created_at,
+        }
+        for history in histories
+    ]
+
+
+def merchant_detail_payload(application):
+    delivery_time_map = {
+        "MORNING": "morning",
+        "AFTERNOON": "afternoon",
+        "EVENING": "evening",
+        "ALL_DAY": "allday",
+    }
+    return {
+        "application_id": application.application_id,
+        "type": application_type(application),
+        "status": application.status,
+        "submitted_at": application.created_at,
+        "updated_at": application.updated_at,
+        "applicant_name": application.applicant_name,
+        "business_name": application.business_name,
+        "owner_first_name": application.owner_first_name,
+        "owner_last_name": application.owner_last_name,
+        "company_email": application.company_email,
+        "contact_number": application.contact_number,
+        "business_type": application.get_business_type_display(),
+        "delivery_time": delivery_time_map.get(application.delivery_time, application.delivery_time.lower()),
+        "branch_name": application.branch_name,
+        "business_address": application.business_address,
+        "street": application.street,
+        "barangay": application.barangay,
+        "city": display_city(application.city),
+        "province": application.province,
+        "postal_code": application.postal_code,
+        "latitude": str(application.latitude) if application.latitude is not None else None,
+        "longitude": str(application.longitude) if application.longitude is not None else None,
+        "admin_remarks": application.admin_remarks or "",
+        "requested_fields": application.requested_fields,
+        "documents": documents_payload(application),
+        "status_history": status_history_payload(application),
+    }
+
+
+def rider_detail_payload(application):
+    return {
+        "application_id": application.application_id,
+        "type": application_type(application),
+        "status": application.status,
+        "submitted_at": application.created_at,
+        "updated_at": application.updated_at,
+        "applicant_name": application.applicant_name,
+        "first_name": application.first_name,
+        "last_name": application.last_name,
+        "email": application.email,
+        "phone_number": application.phone_number,
+        "current_address": application.current_address,
+        "barangay": application.barangay,
+        "city": display_city(application.city),
+        "province": application.province,
+        "postal_code": application.postal_code,
+        "emergency_contact_name": application.emergency_contact_name,
+        "emergency_contact_number": application.emergency_contact_number,
+        "emergency_contact_relationship": application.emergency_contact_relationship,
+        "vehicle_type": application.vehicle_type,
+        "vehicle_brand": application.vehicle_brand,
+        "plate_number": application.plate_number,
+        "admin_remarks": application.admin_remarks or "",
+        "requested_fields": application.requested_fields,
+        "documents": documents_payload(application),
+        "status_history": status_history_payload(application),
+    }
+
+
+def detail_payload(application):
+    if isinstance(application, MerchantApplication):
+        return merchant_detail_payload(application)
+    return rider_detail_payload(application)
 RIDER_DOCUMENT_FIELDS = {
     "vehicle_photo_front",
     "vehicle_photo_back",
@@ -212,17 +406,8 @@ class AdminApplicationListView(APIView):
         return Response(
             {
                 "count": paginator.count,
-                "results": [
-                    {
-                        "application_id": app.application_id,
-                        "type": application_type(app),
-                        "display_name": getattr(app, "business_name", app.applicant_name),
-                        "status": app.status,
-                        "submitted_at": app.created_at,
-                        "service_zone": app.barangay,
-                    }
-                    for app in page_obj.object_list
-                ],
+                "totals": onboarding_totals(),
+                "results": [list_item_payload(app) for app in page_obj.object_list],
             }
         )
 
@@ -232,28 +417,7 @@ class AdminApplicationDetailView(APIView):
 
     def get(self, request, application_id):
         application = get_application_or_404(application_id)
-        serializer = MerchantApplicationSerializer(application) if isinstance(application, MerchantApplication) else RiderApplicationSerializer(application)
-        histories = ApplicationStatusHistory.objects.filter(application_id=application.application_id)
-        return Response(
-            {
-                "application_id": application.application_id,
-                "type": application_type(application),
-                "status": application.status,
-                "data": serializer.data,
-                "admin_remarks": application.admin_remarks or "",
-                "requested_fields": application.requested_fields,
-                "status_history": [
-                    {
-                        "from_status": history.from_status,
-                        "to_status": history.to_status,
-                        "remarks": history.remarks,
-                        "actor": history.actor_id,
-                        "created_at": history.created_at,
-                    }
-                    for history in histories
-                ],
-            }
-        )
+        return Response(detail_payload(application))
 
 
 class AdminDocumentView(APIView):
@@ -271,15 +435,15 @@ class AdminDocumentView(APIView):
         document = getattr(application, document_key, None)
         if not document:
             return Response({"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND)
-        if request.query_params.get("download") == "1":
-            return FileResponse(document.open("rb"), as_attachment=False, filename=document.name.split("/")[-1])
-        return Response(
-            {
-                "file_name": document.name.split("/")[-1],
-                "content_type": getattr(document.file, "content_type", "application/octet-stream"),
-                "size": document.size,
-                "url": request.build_absolute_uri(document.url),
-            }
+        if request.query_params.get("metadata") == "1":
+            return Response(document_payload(application, document_key))
+        file_name = document.name.split("/")[-1]
+        content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+        return FileResponse(
+            document.open("rb"),
+            as_attachment=request.query_params.get("download") == "1",
+            filename=file_name,
+            content_type=content_type,
         )
 
 
@@ -293,7 +457,14 @@ class AdminApproveApplicationView(APIView):
         else:
             result = ApplicationService.approve_rider(application, actor=request.user)
         token = getattr(result, "token", None)
-        return Response({"application_id": application.application_id, "status": ApplicationStatus.APPROVED, "setup_token": str(token) if token else None})
+        return Response(
+            {
+                "application_id": application.application_id,
+                "status": ApplicationStatus.APPROVED,
+                "message": "Application approved.",
+                "setup_token": str(token) if token else None,
+            }
+        )
 
 
 class AdminRequestChangesView(APIView):
@@ -309,7 +480,14 @@ class AdminRequestChangesView(APIView):
             serializer.validated_data["requested_fields"],
             actor=request.user,
         )
-        return Response({"application_id": application.application_id, "status": ApplicationStatus.REQUEST_CHANGES, "edit_token": str(edit_token.token)})
+        return Response(
+            {
+                "application_id": application.application_id,
+                "status": ApplicationStatus.REQUEST_CHANGES,
+                "message": "Change request sent.",
+                "edit_token": str(edit_token.token),
+            }
+        )
 
 
 class AdminRejectApplicationView(APIView):
@@ -320,7 +498,13 @@ class AdminRejectApplicationView(APIView):
         serializer.is_valid(raise_exception=True)
         application = get_application_or_404(application_id)
         ApplicationService.reject_application(application, serializer.validated_data["admin_remarks"], actor=request.user)
-        return Response({"application_id": application.application_id, "status": ApplicationStatus.REJECTED})
+        return Response(
+            {
+                "application_id": application.application_id,
+                "status": ApplicationStatus.REJECTED,
+                "message": "Application rejected.",
+            }
+        )
 
 
 class ApplicationEditTokenView(APIView):

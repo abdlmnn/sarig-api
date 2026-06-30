@@ -101,8 +101,17 @@ class ScopedLoginView(APIView):
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return Response(self.format_login_errors(serializer.errors), status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+    def format_login_errors(self, errors):
+        if "code" in errors and "message" in errors:
+            return {
+                "code": str(errors["code"][0]),
+                "message": str(errors["message"][0]),
+            }
+        return errors
 
 
 class AdminLoginView(ScopedLoginView):

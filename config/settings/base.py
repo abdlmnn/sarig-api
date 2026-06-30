@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "apps.reviews",
     "apps.rides",
     "apps.operations",
+    "apps.locations",
     "cloudinary",
     "cloudinary_storage",
 ]
@@ -170,6 +171,7 @@ REST_FRAMEWORK = {
         "checkout": os.getenv("DRF_THROTTLE_CHECKOUT", "20/hour"),
         "payment_webhook": os.getenv("DRF_THROTTLE_PAYMENT_WEBHOOK", "120/min"),
         "search": os.getenv("DRF_THROTTLE_SEARCH", "60/min"),
+        "locations": os.getenv("DRF_THROTTLE_LOCATIONS", "60/min"),
     },
 }
 
@@ -261,3 +263,20 @@ JOYRIDE_MATCHING_MAX_RADIUS_KM = float(
     os.getenv("JOYRIDE_MATCHING_MAX_RADIUS_KM", "10")
 )
 JOYRIDE_RIDER_CANCEL_PENALTY = os.getenv("JOYRIDE_RIDER_CANCEL_PENALTY", "30.00")
+
+# Location provider settings.
+GEOAPIFY_API_KEY = os.getenv("GEOAPIFY_API_KEY", "")
+OPENROUTESERVICE_API_KEY = os.getenv("OPENROUTESERVICE_API_KEY", "")
+LOCATION_ENABLE_EXTERNAL_APIS = os.getenv(
+    "LOCATION_ENABLE_EXTERNAL_APIS", str(DEBUG)
+).lower() in {"1", "true", "yes", "on"}
+LOCATION_PROVIDER_TIMEOUT_SECONDS = int(
+    os.getenv("LOCATION_PROVIDER_TIMEOUT_SECONDS", "8")
+)
+LOCATION_COUNTRY_CODES = os.getenv("LOCATION_COUNTRY_CODES", "ph")
+LOCATION_BIAS_LATITUDE = os.getenv("LOCATION_BIAS_LATITUDE", "8.003400")
+LOCATION_BIAS_LONGITUDE = os.getenv("LOCATION_BIAS_LONGITUDE", "124.283900")
+DELIVERY_BASE_FEE = os.getenv("DELIVERY_BASE_FEE", "40.00")
+DELIVERY_PER_KM_FEE = os.getenv("DELIVERY_PER_KM_FEE", "10.00")
+DELIVERY_MIN_FEE = os.getenv("DELIVERY_MIN_FEE", "40.00")
+DELIVERY_MAX_DISTANCE_KM = float(os.getenv("DELIVERY_MAX_DISTANCE_KM", "30"))
