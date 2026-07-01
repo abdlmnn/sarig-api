@@ -105,7 +105,8 @@ class PayMongoWebhookTests(TestCase):
             payment_id="pay_test_123",
         )
 
-        res = self._post_webhook(payload)
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self._post_webhook(payload)
 
         self.assertEqual(res.status_code, 200)
         tx.refresh_from_db()

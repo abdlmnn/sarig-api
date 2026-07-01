@@ -200,7 +200,11 @@ class CheckoutView(APIView):
             else:
                 # Schedule auto-cancellation in 5 minutes (for manual acceptance)
                 from .tasks import auto_cancel_stale_order
-                auto_cancel_stale_order.apply_async((str(order.id),), countdown=600)
+                transaction.on_commit(
+                    lambda: auto_cancel_stale_order.apply_async(
+                        (str(order.id),), countdown=600
+                    )
+                )
 
             return Response({
                 "status": "success",

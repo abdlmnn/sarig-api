@@ -104,7 +104,11 @@ class PayMongoWebhookView(APIView):
                 else:
                     # Schedule auto-cancellation in 5 minutes (if merchant doesn't accept manually)
                     from apps.orders.tasks import auto_cancel_stale_order
-                    auto_cancel_stale_order.apply_async((str(order.id),), countdown=600)
+                    transaction.on_commit(
+                        lambda: auto_cancel_stale_order.apply_async(
+                            (str(order.id),), countdown=600
+                        )
+                    )
             else:
                 # DISASTER AVERTED!
                 # The item sold out while they were paying GCash.
