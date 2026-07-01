@@ -17,8 +17,10 @@ from rest_framework.views import APIView
 from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
+from apps.users.permissions import IsMerchant
+from .dashboard import build_merchant_dashboard_overview, store_availability_payload, PH_TZ
 from .models import Store, BusinessVertical
-from .serializers import StoreSerializer, BusinessVerticalSerializer
+from .serializers import StoreSerializer, BusinessVerticalSerializer, StoreStatusUpdateSerializer
 from .permissions import IsMerchantOrAdmin
 
 logger = logging.getLogger(__name__)
@@ -227,3 +229,39 @@ class NearbyStoresView(APIView):
         results.sort(key=lambda x: x["distance_km"])
 
         return Response(results)
+
+
+class MerchantDashboardOverviewView(APIView):
+    permission_classes = [IsMerchant]
+    throttle_scope = "search"
+
+    def get(self, request):
+        payload = build_merchant_dashboard_overview(request)
+        if payload is None:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+        return Response(payload)
+
+
+class MerchantStoreStatusView(APIView):
+    permission_classes = [IsMerchant]
+    throttle_scope = "search"
+
+    def patch(self, request):
+        store = request.user.stores.filter(is_active=True).order_by("name").first()
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        serializer = StoreStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        store.manual_override = serializer.validated_data.get("manual_override")
+        store.manual_override_reason = serializer.validated_data.get("reason", "")
+        store.save(update_fields=["manual_override", "manual_override_reason", "updated_at"])
+
+        availability = store_availability_payload(store, timezone.now().astimezone(PH_TZ))
+        return Response(
+            {
+                "store_id": str(store.id),
+                **availability,
+            }
+        )
