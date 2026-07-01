@@ -229,6 +229,8 @@ ENABLE_FCM_PUSH = os.getenv("ENABLE_FCM_PUSH", "False").lower() in {
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
 PAYMONGO_WEBHOOK_SECRET = os.getenv("PAYMONGO_WEBHOOK_SECRET", "")
 PAYMONGO_SECRET_KEY = os.getenv("PAYMONGO_SECRET_KEY", "")
+PAYMONGO_SUCCESS_URL = os.getenv("PAYMONGO_SUCCESS_URL", "")
+PAYMONGO_CANCEL_URL = os.getenv("PAYMONGO_CANCEL_URL", "")
 PAYMONGO_USE_MOCK = os.getenv("PAYMONGO_USE_MOCK", str(DEBUG)).lower() in {
     "1",
     "true",

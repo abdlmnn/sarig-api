@@ -46,6 +46,15 @@ cp .env.production.example .env
 
 Then update secrets in `.env` (for example `SECRET_KEY` and database credentials).
 
+Location services also require provider keys for address search and road distance estimates:
+
+```env
+GEOAPIFY_API_KEY=your_geoapify_api_key_here
+OPENROUTESERVICE_API_KEY=your_openrouteservice_api_key_here
+```
+
+Do not commit real API keys. See `docs/api/locations_api.md` for the location endpoints and delivery fee flow.
+
 ## Settings Modules
 
 - Dev: `config.settings.dev`

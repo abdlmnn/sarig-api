@@ -19,6 +19,10 @@ class PayMongoWebhookView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "payment_webhook"
 
+    PAID_EVENTS = {"payment.paid", "checkout_session.payment.paid"}
+    FAILED_EVENTS = {"payment.failed", "checkout_session.payment.failed"}
+    EXPIRED_EVENTS = {"checkout_session.expired", "checkout_session.payment.expired"}
+
     @transaction.atomic
     def post(self, request):
         raw_body = request.body
@@ -28,18 +32,15 @@ class PayMongoWebhookView(APIView):
         if not self._is_valid_signature(raw_body, signature):
             return Response({"error": "Unauthorized"}, status=403)
 
-        event_type = payload.get('data', {}).get('attributes', {}).get('type')
-        
-        # The structure of PayMongo webhook payload can vary depending on the event
-        # This is a simplified extraction
-        data_object = payload.get('data', {}).get('attributes', {}).get('data', {})
-        external_id = data_object.get('id')
+        event_type, data_object = self._extract_event(payload)
+        external_id = data_object.get("id")
+        payment_id = self._extract_payment_id(data_object)
 
         if not external_id:
             return Response({"error": "No ID found in payload"}, status=400)
 
         try:
-            payment_tx = PaymentTransaction.objects.get(external_transaction_id=external_id)
+            payment_tx = self._get_transaction(data_object, external_id, payment_id)
         except PaymentTransaction.DoesNotExist:
             return Response({"error": "Transaction not found"}, status=404)
 
@@ -47,12 +48,11 @@ class PayMongoWebhookView(APIView):
         payment_tx.provider_raw_response = payload
 
         # Idempotency Check: Don't process if already successful
-        if payment_tx.status == PaymentStatus.SUCCESS:
+        if payment_tx.status in {PaymentStatus.SUCCESS, PaymentStatus.REFUNDED}:
             return Response({"status": "Duplicate webhook ignored"}, status=200)
 
-        if event_type == 'payment.paid' or event_type == 'checkout_session.payment.paid':
+        if event_type in self.PAID_EVENTS:
             # Extract actual payment ID for future refunds
-            payment_id = data_object.get('attributes', {}).get('payment_id')
             if payment_id:
                 payment_tx.payment_id = payment_id
             
@@ -104,7 +104,11 @@ class PayMongoWebhookView(APIView):
                 else:
                     # Schedule auto-cancellation in 5 minutes (if merchant doesn't accept manually)
                     from apps.orders.tasks import auto_cancel_stale_order
-                    auto_cancel_stale_order.apply_async((str(order.id),), countdown=600)
+                    transaction.on_commit(
+                        lambda: auto_cancel_stale_order.apply_async(
+                            (str(order.id),), countdown=600
+                        )
+                    )
             else:
                 # DISASTER AVERTED!
                 # The item sold out while they were paying GCash.
@@ -121,15 +125,56 @@ class PayMongoWebhookView(APIView):
                     reason="inventory_conflict",
                 )
 
-        elif event_type == 'payment.failed':
+        elif event_type in self.FAILED_EVENTS:
             payment_tx.status = PaymentStatus.FAILED
             payment_tx.save()
 
             order = payment_tx.order
             order.status = OrderStatus.CANCELLED
             order.save()
+            order.broadcast_status_update()
+
+        elif event_type in self.EXPIRED_EVENTS:
+            payment_tx.status = PaymentStatus.EXPIRED
+            payment_tx.save()
+
+            order = payment_tx.order
+            order.status = OrderStatus.CANCELLED
+            order.save()
+            order.broadcast_status_update()
 
         return Response({"status": "Webhook received"})
+
+    def _extract_event(self, payload):
+        event_attributes = payload.get("data", {}).get("attributes", {})
+        return event_attributes.get("type"), event_attributes.get("data", {})
+
+    def _extract_payment_id(self, data_object):
+        attributes = data_object.get("attributes", {})
+        payments = attributes.get("payments") or []
+        if attributes.get("payment_id"):
+            return attributes["payment_id"]
+        if payments and isinstance(payments[0], dict):
+            return payments[0].get("id")
+        if data_object.get("type") == "payment":
+            return data_object.get("id")
+        return None
+
+    def _get_transaction(self, data_object, external_id, payment_id):
+        transaction_qs = PaymentTransaction.objects.select_related("order", "order__store", "order__customer")
+        payment_tx = transaction_qs.filter(external_transaction_id=external_id).first()
+        if payment_tx:
+            return payment_tx
+        if payment_id:
+            payment_tx = transaction_qs.filter(payment_id=payment_id).first()
+            if payment_tx:
+                return payment_tx
+        order_id = data_object.get("attributes", {}).get("metadata", {}).get("order_id")
+        if order_id:
+            payment_tx = transaction_qs.filter(order_id=order_id, status=PaymentStatus.PENDING).first()
+            if payment_tx:
+                return payment_tx
+        raise PaymentTransaction.DoesNotExist
 
     def _attempt_refund_and_notify(self, payment_tx, customer, order_id, reason):
         if payment_tx.status == PaymentStatus.REFUNDED:
