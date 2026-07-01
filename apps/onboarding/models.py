@@ -60,6 +60,13 @@ class MerchantApplication(models.Model):
     company_email = models.EmailField()
     contact_number = models.CharField(max_length=30)
     business_type = models.CharField(max_length=20, choices=BusinessType.choices, default=BusinessType.RESTAURANT)
+    business_vertical = models.ForeignKey(
+        "vendors.BusinessVertical",
+        on_delete=models.PROTECT,
+        related_name="merchant_applications",
+        null=True,
+        blank=True,
+    )
     delivery_time = models.CharField(max_length=20, choices=DeliveryTime.choices, default=DeliveryTime.ALL_DAY)
     branch_name = models.CharField(max_length=120)
     terms_accepted = models.BooleanField(default=False)
@@ -78,6 +85,7 @@ class MerchantApplication(models.Model):
     bir_cor = models.FileField(upload_to="onboarding/merchants/bir_cor/", blank=True, null=True)
     owner_valid_id = models.FileField(upload_to="onboarding/merchants/ids/")
     storefront_photo = models.ImageField(upload_to="onboarding/merchants/photos/")
+    pharmacy_license = models.FileField(upload_to="onboarding/merchants/pharmacy_license/", blank=True, null=True)
     status = models.CharField(max_length=20, choices=ApplicationStatus.choices, default=ApplicationStatus.PENDING, db_index=True)
     admin_remarks = models.TextField(blank=True)
     requested_fields = models.JSONField(default=list, blank=True)

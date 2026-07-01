@@ -127,6 +127,26 @@ class CheckoutFlowTests(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("does not belong to this store", res.data["error"])
 
+    def test_checkout_rejects_prescription_required_product(self):
+        self.product.product_type = "medicine"
+        self.product.requires_prescription = True
+        self.product.save()
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "PICKUP",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error"], "Product Burger requires a prescription.")
+
     def test_checkout_requires_store_and_items(self):
         self.client.force_authenticate(user=self.customer)
         res = self.client.post(

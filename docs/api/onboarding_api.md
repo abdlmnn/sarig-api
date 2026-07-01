@@ -34,6 +34,7 @@ owner_last_name
 company_email
 contact_number
 business_type
+business_vertical_slug
 delivery_time
 branch_name
 terms_accepted
@@ -52,14 +53,76 @@ mayors_permit
 bir_cor
 owner_valid_id
 storefront_photo
+pharmacy_license
 ```
 
 Important rules:
-- `business_type` accepts `Shop` or `Restaurant`; backend stores `SHOP` or `RESTAURANT`
-- `delivery_time` accepts `morning`, `afternoon`, `evening`, `allday`; backend stores `MORNING`, `AFTERNOON`, `EVENING`, `ALL_DAY`
+- `business_vertical_slug` is the real Business Category slug, such as `restaurant`, `pharmacy`, `grocery`, `market`, `convenience-store`, `general-store`, or `bakery`
+- keep sending `business_type` for compatibility; send `RESTAURANT` when `business_vertical_slug=restaurant`, otherwise send `SHOP`
+- `delivery_time` is Order Availability, not business category; send `ALL_DAY`, `MORNING`, `AFTERNOON`, or `EVENING`
+- `pharmacy_license` is required when `business_vertical_slug=pharmacy`
 - `terms_accepted` must be `true`
 - if `location_source = pin`, send `pinned_address`, `latitude`, and `longitude`
+- do not send `street`; it is no longer required
 - `halal_certification` is no longer part of the merchant payload
+
+### Merchant Form Options
+
+Business categories:
+
+`GET /api/v1/vendors/business-verticals/`
+
+Returns an array:
+
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Pharmacy",
+    "slug": "pharmacy",
+    "allowed_product_types": ["medicine", "grocery", "general"],
+    "requires_license": true,
+    "required_documents": ["mayors_permit", "pharmacy_license"],
+    "is_active": true
+  }
+]
+```
+
+Order availability options:
+
+`GET /api/v1/onboarding/merchant/options/`
+
+Response:
+
+```json
+{
+  "delivery_time": {
+    "field": "delivery_time",
+    "ui_label": "Order Availability",
+    "ui_help_text": "When do you usually accept customer orders?",
+    "default": "ALL_DAY",
+    "options": [
+      {"value": "ALL_DAY", "label": "All day"},
+      {"value": "MORNING", "label": "Morning only"},
+      {"value": "AFTERNOON", "label": "Afternoon only"},
+      {"value": "EVENING", "label": "Evening only"}
+    ]
+  }
+}
+```
+
+Document field labels:
+
+```text
+dti_sec_certificate -> DTI / SEC Certificate
+mayors_permit -> Mayor's Permit / Business Permit
+owner_valid_id -> Owner Valid ID
+storefront_photo -> Storefront Photo
+bir_cor -> BIR COR (optional)
+pharmacy_license -> Pharmacy License
+```
+
+For `pharmacy`, show the base required documents plus `pharmacy_license`.
 
 Success response:
 
@@ -367,7 +430,7 @@ Rider response is also flat and uses rider fields:
 ```
 
 Document keys:
-- Merchant: `dti_sec_certificate`, `mayors_permit`, `bir_cor`, `owner_valid_id`, `storefront_photo`
+- Merchant: `dti_sec_certificate`, `mayors_permit`, `bir_cor`, `owner_valid_id`, `storefront_photo`, `pharmacy_license`
 - Rider: `professional_drivers_license`, `lto_or_cr`, `nbi_clearance`, `barangay_clearance`, `vehicle_photo_front`, `vehicle_photo_back`
 
 ### View Document
@@ -446,7 +509,8 @@ Merchant step 1:
 - `companyEmail` -> `company_email`
 - `mobileNumber` -> `contact_number`
 - `businessType` -> `business_type`
-- `preferredDeliveryTime` -> `delivery_time`
+- `businessCategory` -> `business_vertical_slug`
+- `orderAvailability` -> `delivery_time`
 - `branch` -> `branch_name`
 - `acceptTerms` -> `terms_accepted`
 
@@ -468,6 +532,7 @@ Merchant step 3:
 - `bir_cor` -> `bir_cor`
 - `owner_valid_id` -> `owner_valid_id`
 - `storefront_photo` -> `storefront_photo`
+- `pharmacyLicense` -> `pharmacy_license`
 
 Rider step 1:
 - `firstName` -> `first_name`

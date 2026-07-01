@@ -6,6 +6,7 @@ router = DefaultRouter()
 
 router.register(r"stores", StoreViewSet, basename="stores")
 router.register(r"verticals", BusinessVerticalViewSet, basename="verticals")
+router.register(r"business-verticals", BusinessVerticalViewSet, basename="business-verticals")
 
 urlpatterns = [
     path("", include(router.urls)),

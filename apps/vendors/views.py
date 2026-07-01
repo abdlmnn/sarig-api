@@ -25,10 +25,22 @@ logger = logging.getLogger(__name__)
 
 class BusinessVerticalViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BusinessVerticalSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
 
     def get_queryset(self):
-        return BusinessVertical.objects.filter(is_active=True)
+        return BusinessVertical.objects.filter(
+            is_active=True,
+            slug__in=[
+                "restaurant",
+                "pharmacy",
+                "grocery",
+                "market",
+                "convenience-store",
+                "general-store",
+                "bakery",
+            ],
+        )
 
 
 class StoreViewSet(viewsets.ModelViewSet):
