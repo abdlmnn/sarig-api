@@ -6,13 +6,14 @@ from apps.users.models import User, Role
 from apps.vendors.models import Store, BusinessVertical
 from apps.catalog.models import Category, Product
 from apps.orders.models import Order
-from apps.payments.models import PaymentTransaction, PaymentMethod
+from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.marketing.models import PromoCode, DiscountType
 from django.utils import timezone
 from datetime import timedelta
 
 
 @override_settings(
+    PAYMONGO_USE_MOCK=True,
     CELERY_TASK_ALWAYS_EAGER=True,
     CELERY_TASK_STORE_EAGER_RESULT=False,
     CELERY_RESULT_BACKEND="cache+memory://",
@@ -86,6 +87,30 @@ class CheckoutFlowTests(TestCase):
                 order=order, payment_method=PaymentMethod.COD
             ).exists()
         )
+
+    def test_paymongo_checkout_returns_checkout_url_and_records_session(self):
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "PAYMONGO",
+            "delivery_method": "PICKUP",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["status"], "pending")
+        self.assertIn("checkout_url", res.data)
+        order = Order.objects.get(id=res.data["order"]["id"])
+        tx = PaymentTransaction.objects.get(order=order)
+        self.assertEqual(tx.payment_method, PaymentMethod.PAYMONGO)
+        self.assertEqual(tx.status, PaymentStatus.PENDING)
+        self.assertTrue(tx.external_transaction_id.startswith("cs_mock_"))
+        self.assertEqual(tx.provider_raw_response["attributes"]["metadata"]["order_id"], str(order.id))
 
     def test_checkout_rejects_product_from_different_store(self):
         self.client.force_authenticate(user=self.customer)

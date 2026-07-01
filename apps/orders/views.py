@@ -219,11 +219,13 @@ class CheckoutView(APIView):
             # Call PayMongo API to generate a checkout link
             paymongo_response = PayMongoService.create_checkout_session(
                 amount=order.total_amount,
-                description=f"Sarig Order {order.id}"
+                description=f"Sarig Order {order.id}",
+                order_id=order.id,
             )
 
             transaction_record.external_transaction_id = paymongo_response['id']
-            transaction_record.save()
+            transaction_record.provider_raw_response = paymongo_response.get("raw")
+            transaction_record.save(update_fields=["external_transaction_id", "provider_raw_response", "updated_at"])
 
             return Response({
                 "status": "pending",

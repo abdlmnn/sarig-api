@@ -1,7 +1,10 @@
 import os
+from decimal import Decimal
+
 import requests
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+
 
 class PayMongoService:
     BASE_URL = "https://api.paymongo.com/v1"
@@ -23,23 +26,22 @@ class PayMongoService:
             "Authorization": f"Basic {auth}"
         }
 
+    @staticmethod
+    def _to_centavos(amount):
+        return int(Decimal(str(amount)) * 100)
+
     @classmethod
-    def create_checkout_session(cls, amount, description, success_url=None, cancel_url=None):
-        """
-        Creates a checkout session in PayMongo.
-        Amount should be in centavos (PHP * 100).
-        """
+    def create_checkout_session(cls, amount, description, order_id, success_url=None, cancel_url=None):
         url = f"{cls.BASE_URL}/checkout_sessions"
+        success_url = success_url or getattr(settings, "PAYMONGO_SUCCESS_URL", "")
+        cancel_url = cancel_url or getattr(settings, "PAYMONGO_CANCEL_URL", "")
 
         payload = {
             "data": {
                 "attributes": {
-                    "billing": {
-                        # Add default billing info if needed
-                    },
                     "line_items": [
                         {
-                            "amount": int(amount * 100),
+                            "amount": cls._to_centavos(amount),
                             "currency": "PHP",
                             "description": description,
                             "name": "Order Payment",
@@ -47,17 +49,26 @@ class PayMongoService:
                         }
                     ],
                     "payment_method_types": ["gcash", "paymaya", "card"],
-                    "description": description
+                    "description": description,
+                    "metadata": {
+                        "order_id": str(order_id),
+                        "platform": "sarig",
+                    },
                 }
             }
         }
+        if success_url:
+            payload["data"]["attributes"]["success_url"] = success_url
+        if cancel_url:
+            payload["data"]["attributes"]["cancel_url"] = cancel_url
 
         if getattr(settings, "PAYMONGO_USE_MOCK", settings.DEBUG):
             if cls._is_production_settings():
                 raise ImproperlyConfigured("PAYMONGO_USE_MOCK cannot be enabled in production.")
             return {
-                "id": "cs_mock_123456789",
-                "checkout_url": "https://checkout.paymongo.com/mock_session"
+                "id": f"cs_mock_{order_id}",
+                "checkout_url": "https://checkout.paymongo.com/mock_session",
+                "raw": payload["data"],
             }
 
         response = requests.post(url, json=payload, headers=cls.get_headers(), timeout=15)
@@ -81,7 +92,7 @@ class PayMongoService:
         payload = {
             "data": {
                 "attributes": {
-                    "amount": int(amount * 100),
+                    "amount": cls._to_centavos(amount),
                     "payment_id": payment_id,
                     "reason": reason,
                     "notes": "Order rejected by merchant"

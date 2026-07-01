@@ -18,10 +18,7 @@ Base URL:
   "address_text": "string",
   "latitude": 0.0,
   "longitude": 0.0,
-  "subtotal": 0.0,
-  "delivery_fee": 0.0,
-  "system_fee": 0.0,
-  "total_amount": 0.0,
+  "delivery_method": "DELIVERY | PICKUP",
   "payment_method": "COD | PAYMONGO",
   "items": [
     {
@@ -32,6 +29,8 @@ Base URL:
   ]
 }
 ```
+
+Do not send `subtotal`, `delivery_fee`, `system_fee`, or `total_amount` from frontend logic. Checkout calculates these server-side. For `DELIVERY`, checkout uses the shared location service route estimate and delivery fee formula. For `PICKUP`, delivery fee is `0.00`.
 
 **Response (COD)**:
 ```json
@@ -51,6 +50,8 @@ Base URL:
 }
 ```
 
+For `PAYMONGO`, the merchant should not treat the order as paid from the frontend redirect alone. The backend waits for PayMongo webhook confirmation before marking the payment transaction as `SUCCESS` and notifying the merchant.
+
 ---
 
 ## ORDER TRACKING (Upcoming)
@@ -66,3 +67,5 @@ Base URL:
 ## NOTES
 - **Atomicity**: Checkout is wrapped in a database lock. If payment session creation fails, the order is not saved.
 - **Statuses**: `PENDING`, `ACCEPTED`, `PREPARING`, `READY`, `ON_THE_WAY`, `DELIVERED`, `CANCELLED`.
+- **Payment confirmation**: PayMongo orders remain payment-pending until `/api/v1/payments/webhooks/paymongo/` confirms paid, failed, or expired state.
+- **Delivery fee**: Delivery checkout uses `apps.locations` for road-distance estimates with Haversine fallback and rejects addresses outside `DELIVERY_MAX_DISTANCE_KM`.

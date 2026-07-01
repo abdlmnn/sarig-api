@@ -15,6 +15,7 @@ class PaymentStatus(models.TextChoices):
     AUTHORIZED = "AUTHORIZED", "Authorized (Funds held, not captured)"
     SUCCESS = "SUCCESS", "Payment Successful"
     FAILED = "FAILED", "Payment Failed"
+    EXPIRED = "EXPIRED", "Payment Expired"
     REFUNDED = "REFUNDED", "Payment Refunded"
 
 
