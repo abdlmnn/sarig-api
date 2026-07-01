@@ -68,7 +68,7 @@ class MerchantApplication(models.Model):
     barangay = models.CharField(max_length=100)
     province = models.CharField(max_length=100)
     postal_code = models.CharField(max_length=20)
-    street = models.CharField(max_length=255)
+    street = models.CharField(max_length=255, blank=True)
     location_source = models.CharField(max_length=20, choices=LocationSource.choices, default=LocationSource.MANUAL)
     pinned_address = models.TextField(blank=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)

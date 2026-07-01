@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from apps.common.validators import validate_document_upload, validate_image_upload
+from apps.locations.services import is_inside_marawi
 
 from .models import (
     ApplicationEditToken,
@@ -27,6 +28,7 @@ def normalize_choice(value, allowed_values, aliases=None):
 class MerchantApplicationSerializer(serializers.ModelSerializer):
     business_type = serializers.CharField()
     delivery_time = serializers.CharField()
+    street = serializers.CharField(required=False, allow_blank=True, default="")
 
     class Meta:
         model = MerchantApplication
@@ -97,6 +99,10 @@ class MerchantApplicationSerializer(serializers.ModelSerializer):
             missing = [field for field in ("pinned_address", "latitude", "longitude") if attrs.get(field) in (None, "")]
             if missing:
                 raise serializers.ValidationError({field: "This field is required when location_source is pin." for field in missing})
+            if not is_inside_marawi(attrs["latitude"], attrs["longitude"]):
+                raise serializers.ValidationError(
+                    {"coordinates": "Location is outside the Marawi City service boundary."}
+                )
         return attrs
 
 
