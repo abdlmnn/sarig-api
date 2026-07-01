@@ -30,7 +30,10 @@ class CheckoutFlowTests(TestCase):
         merchant_role, _ = Role.objects.get_or_create(name="Merchant")
         self.merchant.roles.add(merchant_role)
 
-        vertical = BusinessVertical.objects.create(name="Restaurant", slug="restaurant")
+        vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant"},
+        )
         self.store = Store.objects.create(
             owner=self.merchant,
             vertical=vertical,
@@ -47,7 +50,10 @@ class CheckoutFlowTests(TestCase):
         self.other_merchant = User.objects.create_user(
             username="merchant2", email="merchant2@test.com", password="pw12345"
         )
-        self.other_vertical = BusinessVertical.objects.create(name="Cafe", slug="cafe")
+        self.other_vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="cafe",
+            defaults={"name": "Cafe"},
+        )
         self.other_store = Store.objects.create(
             owner=self.other_merchant,
             vertical=self.other_vertical,

@@ -19,7 +19,10 @@ class MerchantOrderActionTests(TestCase):
         self.client = APIClient()
         self.customer = User.objects.create_user("cust", "cust@test.com", "pw12345")
         self.merchant = User.objects.create_user("merch", "merch@test.com", "pw12345")
-        vertical = BusinessVertical.objects.create(name="Restaurant", slug="restaurant")
+        vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant"},
+        )
         self.store = Store.objects.create(
             owner=self.merchant,
             vertical=vertical,
