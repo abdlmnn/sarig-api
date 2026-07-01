@@ -8,6 +8,13 @@ from apps.riders.services import RiderDispatcherService
 
 logger = logging.getLogger(__name__)
 
+MARAWI_BOUNDS = {
+    "min_latitude": Decimal("7.930000"),
+    "max_latitude": Decimal("8.080000"),
+    "min_longitude": Decimal("124.230000"),
+    "max_longitude": Decimal("124.360000"),
+}
+
 
 class LocationProviderError(Exception):
     pass
@@ -23,6 +30,15 @@ def _timeout():
 
 def _money(value):
     return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def is_inside_marawi(latitude, longitude):
+    latitude = Decimal(str(latitude))
+    longitude = Decimal(str(longitude))
+    return (
+        MARAWI_BOUNDS["min_latitude"] <= latitude <= MARAWI_BOUNDS["max_latitude"]
+        and MARAWI_BOUNDS["min_longitude"] <= longitude <= MARAWI_BOUNDS["max_longitude"]
+    )
 
 
 def calculate_delivery_fee(distance_km):
@@ -106,14 +122,16 @@ class GeoapifyService:
     @staticmethod
     def _feature_to_location(feature):
         props = feature.get("properties", {})
+        address = props.get("formatted") or props.get("address_line1") or ""
         return {
-            "address": props.get("formatted") or props.get("address_line1") or "",
+            "address": address,
+            "address_text": address,
             "latitude": props.get("lat"),
             "longitude": props.get("lon"),
             "barangay": props.get("suburb") or props.get("district") or "",
             "city": props.get("city") or props.get("municipality") or "",
             "province": props.get("state") or "",
-            "postcode": props.get("postcode") or "",
+            "postal_code": props.get("postcode") or "",
             "provider": "geoapify",
         }
 

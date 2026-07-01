@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Product
+from .models import Category, MedicineReference, Product
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
@@ -14,3 +14,10 @@ class ProductAdmin(admin.ModelAdmin):
     list_filter = ("category__store", "category", "is_available", "is_active")
     search_fields = ("name", "description")
     prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(MedicineReference)
+class MedicineReferenceAdmin(admin.ModelAdmin):
+    list_display = ("registration_number", "generic_name", "brand_name", "dosage_strength", "classification", "expiry_date", "is_active")
+    list_filter = ("classification", "requires_prescription", "is_active", "expiry_date")
+    search_fields = ("registration_number", "generic_name", "brand_name", "pharmacologic_category")

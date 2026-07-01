@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from .services import is_inside_marawi
+
 
 class CoordinateSerializer(serializers.Serializer):
     latitude = serializers.DecimalField(max_digits=9, decimal_places=6)
@@ -17,7 +19,12 @@ class CoordinateSerializer(serializers.Serializer):
 
 
 class ReverseGeocodeSerializer(CoordinateSerializer):
-    pass
+    def validate(self, attrs):
+        if not is_inside_marawi(attrs["latitude"], attrs["longitude"]):
+            raise serializers.ValidationError(
+                {"coordinates": "Location is outside the Marawi City service boundary."}
+            )
+        return attrs
 
 
 class RouteEstimateSerializer(serializers.Serializer):

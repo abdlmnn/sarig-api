@@ -2,6 +2,8 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from apps.common.validators import validate_document_upload, validate_image_upload
+from apps.locations.services import is_inside_marawi
+from apps.vendors.models import BusinessVertical
 
 from .models import (
     ApplicationEditToken,
@@ -27,6 +29,14 @@ def normalize_choice(value, allowed_values, aliases=None):
 class MerchantApplicationSerializer(serializers.ModelSerializer):
     business_type = serializers.CharField()
     delivery_time = serializers.CharField()
+    street = serializers.CharField(required=False, allow_blank=True, default="")
+    business_vertical_slug = serializers.SlugRelatedField(
+        source="business_vertical",
+        slug_field="slug",
+        queryset=BusinessVertical.objects.filter(is_active=True),
+        required=False,
+        write_only=True,
+    )
 
     class Meta:
         model = MerchantApplication
@@ -38,6 +48,8 @@ class MerchantApplicationSerializer(serializers.ModelSerializer):
             "company_email",
             "contact_number",
             "business_type",
+            "business_vertical",
+            "business_vertical_slug",
             "delivery_time",
             "branch_name",
             "terms_accepted",
@@ -56,13 +68,14 @@ class MerchantApplicationSerializer(serializers.ModelSerializer):
             "bir_cor",
             "owner_valid_id",
             "storefront_photo",
+            "pharmacy_license",
             "status",
             "admin_remarks",
             "requested_fields",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["application_id", "status", "admin_remarks", "requested_fields", "created_at", "updated_at"]
+        read_only_fields = ["application_id", "business_vertical", "status", "admin_remarks", "requested_fields", "created_at", "updated_at"]
 
     def validate_business_type(self, value):
         return normalize_choice(value, BusinessType.values, {"SHOP": BusinessType.SHOP, "RESTAURANT": BusinessType.RESTAURANT})
@@ -90,13 +103,39 @@ class MerchantApplicationSerializer(serializers.ModelSerializer):
         validate_image_upload(value)
         return value
 
+    def validate_pharmacy_license(self, value):
+        validate_document_upload(value)
+        return value
+
     def validate(self, attrs):
         if not attrs.get("terms_accepted"):
             raise serializers.ValidationError({"terms_accepted": "Terms must be accepted."})
+        if not attrs.get("business_vertical"):
+            business_type = attrs.get("business_type", BusinessType.RESTAURANT)
+            vertical_slug = "restaurant" if business_type == BusinessType.RESTAURANT else "general-store"
+            vertical = BusinessVertical.objects.filter(slug=vertical_slug, is_active=True).first()
+            if vertical:
+                attrs["business_vertical"] = vertical
+        business_vertical = attrs.get("business_vertical")
+        required_documents = business_vertical.required_documents if business_vertical else []
+        missing_documents = [
+            field
+            for field in required_documents
+            if field in {"pharmacy_license"}
+            and attrs.get(field, getattr(self.instance, field, None)) in (None, "")
+        ]
+        if missing_documents:
+            raise serializers.ValidationError(
+                {field: "This document is required for the selected business category." for field in missing_documents}
+            )
         if attrs.get("location_source") == LocationSource.PIN:
             missing = [field for field in ("pinned_address", "latitude", "longitude") if attrs.get(field) in (None, "")]
             if missing:
                 raise serializers.ValidationError({field: "This field is required when location_source is pin." for field in missing})
+            if not is_inside_marawi(attrs["latitude"], attrs["longitude"]):
+                raise serializers.ValidationError(
+                    {"coordinates": "Location is outside the Marawi City service boundary."}
+                )
         return attrs
 
 

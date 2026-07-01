@@ -11,6 +11,7 @@ from .views import (
     ApplicationEditTokenView,
     MerchantApplicationCreateView,
     MerchantApplicationDetailView,
+    MerchantOnboardingOptionsView,
     MerchantStatusCheckView,
     RiderApplicationCreateView,
     RiderApplicationDetailView,
@@ -18,6 +19,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("merchant/options/", MerchantOnboardingOptionsView.as_view(), name="merchant-onboarding-options"),
     path("merchant/apply/", MerchantApplicationCreateView.as_view(), name="merchant-apply"),
     path("merchant/status/check/", MerchantStatusCheckView.as_view(), name="merchant-status-check"),
     path("merchant/status/<uuid:pk>/", MerchantApplicationDetailView.as_view(), name="merchant-status"),

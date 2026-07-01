@@ -66,6 +66,16 @@ class CheckoutView(APIView):
                     {"error": f"Product {product.name} does not belong to this store."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            if not product.in_stock:
+                return Response(
+                    {"error": f"Product {product.name} is currently unavailable."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if product.requires_prescription:
+                return Response(
+                    {"error": f"Product {product.name} requires a prescription."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
             qty = item_data["quantity"]
             if product.track_inventory and product.stock_quantity is not None and product.stock_quantity < qty:
