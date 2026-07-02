@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
-from apps.catalog.models import Category, Product
+from apps.catalog.models import Category, InventoryMode, Product, ProductType, UnitType
 from apps.vendors.models import Store
 
 
@@ -89,14 +89,14 @@ class Command(BaseCommand):
                     "name": name,
                     "description": description,
                     "price": Decimal(price),
-                    "product_type": Product.ProductType.FOOD,
+                    "product_type": ProductType.FOOD,
                     "brand_name": "",
                     "generic_name": "",
                     "dosage": "",
-                    "medicine_form": Product.MedicineForm.NONE,
+                    "medicine_form": "",
                     "requires_prescription": False,
-                    "unit_type": Product.UnitType.SERVING,
-                    "inventory_mode": Product.InventoryMode.NONE,
+                    "unit_type": UnitType.PIECE,
+                    "inventory_mode": InventoryMode.NONE,
                     "preparation_time_minutes": 15,
                     "is_available": is_available,
                     "track_inventory": False,

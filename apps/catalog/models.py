@@ -52,28 +52,6 @@ class Category(models.Model):
 
 
 class Product(models.Model):
-    class ProductType(models.TextChoices):
-        FOOD = "FOOD", "Food"
-        MEDICINE = "MEDICINE", "Medicine"
-        GROCERY = "GROCERY", "Grocery"
-        GENERAL = "GENERAL", "General"
-
-    class InventoryMode(models.TextChoices):
-        NONE = "NONE", "None"
-        TRACKED = "TRACKED", "Tracked"
-
-    class UnitType(models.TextChoices):
-        ITEM = "ITEM", "Item"
-        SERVING = "SERVING", "Serving"
-        PACK = "PACK", "Pack"
-        BOTTLE = "BOTTLE", "Bottle"
-
-    class MedicineForm(models.TextChoices):
-        NONE = "NONE", "None"
-        TABLET = "TABLET", "Tablet"
-        CAPSULE = "CAPSULE", "Capsule"
-        SYRUP = "SYRUP", "Syrup"
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     category = models.ForeignKey(
         Category, on_delete=models.CASCADE, related_name="products"
