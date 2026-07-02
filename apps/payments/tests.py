@@ -24,7 +24,10 @@ class PayMongoWebhookTests(TestCase):
         self.client = APIClient()
         self.customer = User.objects.create_user("paycust", "paycust@test.com", "pw12345")
         self.merchant = User.objects.create_user("paymerch", "paymerch@test.com", "pw12345")
-        vertical = BusinessVertical.objects.create(name="Restaurant", slug="restaurant-payments")
+        vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant"},
+        )
         self.store = Store.objects.create(
             owner=self.merchant,
             vertical=vertical,

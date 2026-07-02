@@ -13,8 +13,8 @@ from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
 
-from .models import Category, Product
-from .serializers import CategorySerializer, ProductSerializer
+from .models import Category, MedicineReference, Product
+from .serializers import CategorySerializer, MedicineReferenceSerializer, ProductSerializer
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -41,6 +41,27 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         if category_id:
             queryset = queryset.filter(category_id=category_id)
         return queryset
+
+
+class MedicineReferenceViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = MedicineReferenceSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = MedicineReference.objects.filter(is_active=True)
+        query = self.request.query_params.get("q", "").strip()
+        requires_prescription = self.request.query_params.get("requires_prescription")
+        if query:
+            queryset = queryset.filter(
+                Q(generic_name__icontains=query)
+                | Q(brand_name__icontains=query)
+                | Q(registration_number__icontains=query)
+                | Q(pharmacologic_category__icontains=query)
+            )
+        if requires_prescription in ("true", "false"):
+            queryset = queryset.filter(requires_prescription=requires_prescription == "true")
+        return queryset[:50]
+
 
 def get_or_create_merchant_store(user):
     store = Store.objects.filter(owner=user, is_active=True).first()

@@ -10,6 +10,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .models import DeliveryTime
 from .models import (
     AccountSetupToken,
     ApplicationEditToken,
@@ -36,6 +37,7 @@ MERCHANT_DOCUMENT_FIELDS = {
     "bir_cor",
     "owner_valid_id",
     "storefront_photo",
+    "pharmacy_license",
 }
 
 MERCHANT_DOCUMENT_META = {
@@ -44,6 +46,7 @@ MERCHANT_DOCUMENT_META = {
     "bir_cor": ("BIR COR", False),
     "owner_valid_id": ("Owner Valid ID", True),
     "storefront_photo": ("Storefront Photo", True),
+    "pharmacy_license": ("Pharmacy License", False),
 }
 RIDER_DOCUMENT_META = {
     "professional_drivers_license": ("Professional Driver's License", True),
@@ -71,7 +74,17 @@ def format_file_size(size):
 
 
 def document_meta(application):
-    return MERCHANT_DOCUMENT_META if isinstance(application, MerchantApplication) else RIDER_DOCUMENT_META
+    if not isinstance(application, MerchantApplication):
+        return RIDER_DOCUMENT_META
+    meta = dict(MERCHANT_DOCUMENT_META)
+    required_documents = []
+    if application.business_vertical_id:
+        required_documents = application.business_vertical.required_documents or []
+    for key in required_documents:
+        if key in meta:
+            label, _ = meta[key]
+            meta[key] = (label, True)
+    return meta
 
 
 def document_view_url(application, key):
@@ -298,6 +311,43 @@ def public_success_payload(application, message, confirmation_email_sent):
         "message": message,
         "confirmation_email_sent": confirmation_email_sent,
     }
+
+
+class MerchantOnboardingOptionsView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "onboarding"
+
+    def get(self, request):
+        return Response(
+            {
+                "delivery_time": {
+                    "field": "delivery_time",
+                    "ui_label": "Order Availability",
+                    "ui_help_text": "When do you usually accept customer orders?",
+                    "default": DeliveryTime.ALL_DAY,
+                    "options": [
+                        {"value": DeliveryTime.ALL_DAY, "label": "All day"},
+                        {"value": DeliveryTime.MORNING, "label": "Morning only"},
+                        {"value": DeliveryTime.AFTERNOON, "label": "Afternoon only"},
+                        {"value": DeliveryTime.EVENING, "label": "Evening only"},
+                    ],
+                },
+                "documents": {
+                    "base_required": [
+                        {"key": "dti_sec_certificate", "label": "DTI / SEC Certificate"},
+                        {"key": "mayors_permit", "label": "Mayor's Permit / Business Permit"},
+                        {"key": "owner_valid_id", "label": "Owner Valid ID"},
+                        {"key": "storefront_photo", "label": "Storefront Photo"},
+                    ],
+                    "base_optional": [
+                        {"key": "bir_cor", "label": "BIR COR"},
+                    ],
+                    "vertical_supported": [
+                        {"key": "pharmacy_license", "label": "Pharmacy License"},
+                    ],
+                },
+            }
+        )
 
 
 class MerchantApplicationCreateView(generics.CreateAPIView):

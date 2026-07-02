@@ -30,7 +30,10 @@ class CheckoutFlowTests(TestCase):
         merchant_role, _ = Role.objects.get_or_create(name="Merchant")
         self.merchant.roles.add(merchant_role)
 
-        vertical = BusinessVertical.objects.create(name="Restaurant", slug="restaurant")
+        vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant"},
+        )
         self.store = Store.objects.create(
             owner=self.merchant,
             vertical=vertical,
@@ -47,7 +50,10 @@ class CheckoutFlowTests(TestCase):
         self.other_merchant = User.objects.create_user(
             username="merchant2", email="merchant2@test.com", password="pw12345"
         )
-        self.other_vertical = BusinessVertical.objects.create(name="Cafe", slug="cafe")
+        self.other_vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="cafe",
+            defaults={"name": "Cafe"},
+        )
         self.other_store = Store.objects.create(
             owner=self.other_merchant,
             vertical=self.other_vertical,
@@ -126,6 +132,26 @@ class CheckoutFlowTests(TestCase):
         res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertIn("does not belong to this store", res.data["error"])
+
+    def test_checkout_rejects_prescription_required_product(self):
+        self.product.product_type = "medicine"
+        self.product.requires_prescription = True
+        self.product.save()
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "PICKUP",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+
+        res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error"], "Product Burger requires a prescription.")
 
     def test_checkout_requires_store_and_items(self):
         self.client.force_authenticate(user=self.customer)

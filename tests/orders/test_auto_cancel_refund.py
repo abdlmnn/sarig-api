@@ -14,7 +14,10 @@ class AutoCancelRefundTests(TestCase):
     def setUp(self):
         self.customer = User.objects.create_user("cust2", "cust2@test.com", "pw12345")
         self.merchant = User.objects.create_user("merch2", "merch2@test.com", "pw12345")
-        vertical = BusinessVertical.objects.create(name="Restaurant", slug="restaurant-ac")
+        vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant"},
+        )
         self.store = Store.objects.create(
             owner=self.merchant,
             vertical=vertical,

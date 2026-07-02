@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from apps.users.views import AdminLoginView, LogoutView, MerchantLoginView
+from apps.vendors.views import MerchantDashboardOverviewView, MerchantStoreStatusView
 from apps.onboarding.views import (
     AccountSetupView,
     AdminApplicationDetailView,
@@ -33,6 +34,8 @@ urlpatterns = [
     path("auth/admin/login/", AdminLoginView.as_view(), name="admin_login"),
     path("auth/merchant/login/", MerchantLoginView.as_view(), name="merchant_login"),
     path("auth/logout/", LogoutView.as_view(), name="auth_logout"),
+    path("merchant/dashboard/overview/", MerchantDashboardOverviewView.as_view(), name="merchant-dashboard-overview"),
+    path("merchant/store/status/", MerchantStoreStatusView.as_view(), name="merchant-store-status"),
     path("accounts/setup/<uuid:token>/", AccountSetupView.as_view(), name="account-setup"),
     path("admin/onboarding/applications/", AdminApplicationListView.as_view(), name="admin-onboarding-applications"),
     path("admin/onboarding/applications/<str:application_id>/", AdminApplicationDetailView.as_view(), name="admin-onboarding-application-detail"),

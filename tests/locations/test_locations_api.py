@@ -64,6 +64,18 @@ class LocationApiTests(TestCase):
 
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["barangay"], "Dimalna")
+        self.assertEqual(res.data["address_text"], "Near MSU Main Gate, Marawi City")
+        self.assertIn("postal_code", res.data)
+
+    def test_reverse_rejects_coordinates_outside_marawi(self):
+        res = self.client.post(
+            "/api/v1/locations/reverse/",
+            {"latitude": "14.599500", "longitude": "120.984200"},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("coordinates", res.data)
 
     @patch("apps.locations.services.requests.post")
     def test_route_estimate_returns_openrouteservice_distance(self, mock_post):
