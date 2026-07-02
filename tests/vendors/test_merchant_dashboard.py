@@ -128,3 +128,44 @@ class MerchantDashboardOverviewTests(TestCase):
         self.store.refresh_from_db()
         self.assertIsNone(self.store.manual_override)
         self.assertEqual(self.store.manual_override_reason, "")
+
+    def test_merchant_can_update_store_status_with_frontend_status_value(self):
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.patch(
+            "/api/v1/merchant/store/status/",
+            {
+                "status": "CLOSED",
+                "reason": "Kitchen break",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "CLOSED")
+        self.assertEqual(response.data["manual_override"], StoreManualOverride.CLOSED_TEMPORARILY)
+
+        self.store.refresh_from_db()
+        self.assertEqual(self.store.manual_override, StoreManualOverride.CLOSED_TEMPORARILY)
+        self.assertEqual(self.store.manual_override_reason, "Kitchen break")
+
+    def test_merchant_can_clear_store_status_with_empty_frontend_value(self):
+        self.store.manual_override = StoreManualOverride.CLOSED_TEMPORARILY
+        self.store.manual_override_reason = "Kitchen break"
+        self.store.save(update_fields=["manual_override", "manual_override_reason", "updated_at"])
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.patch(
+            "/api/v1/merchant/store/status/",
+            {
+                "status": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["manual_override"])
+
+        self.store.refresh_from_db()
+        self.assertIsNone(self.store.manual_override)
+        self.assertEqual(self.store.manual_override_reason, "")

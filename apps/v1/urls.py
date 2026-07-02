@@ -14,6 +14,8 @@ from apps.onboarding.views import (
     AdminRejectApplicationView,
     AdminRequestChangesView,
 )
+from apps.catalog.views import MerchantProductListView
+from apps.vendors.views import MerchantDashboardOverviewView, MerchantStoreStatusView
 
 app_name = "v1"
 
@@ -54,4 +56,7 @@ urlpatterns = [
     path("reviews/", include("apps.reviews.urls")),
     path("rides/", include("apps.rides.urls")),
     path("locations/", include("apps.locations.urls")),
+    path("merchant/dashboard/overview/", MerchantDashboardOverviewView.as_view(), name="merchant-dashboard-overview"),
+    path("merchant/products/", MerchantProductListView.as_view(), name="merchant-products"),
+    path("merchant/store/status/", MerchantStoreStatusView.as_view(), name="merchant-store-status"),
 ]

@@ -1,10 +1,16 @@
-from django.db.models import Q, Avg
+from decimal import Decimal
+
+from django.core.paginator import Paginator
+from django.db.models import Avg, Q
+from rest_framework import permissions, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import viewsets, permissions
 
-from apps.riders.services import RiderDispatcherService # Use the haversine from here
+from apps.onboarding.models import ApplicationStatus, MerchantApplication
+from apps.onboarding.services import ApplicationService
+from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
+from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
 
 from .models import Category, MedicineReference, Product
@@ -55,6 +61,151 @@ class MedicineReferenceViewSet(viewsets.ReadOnlyModelViewSet):
         if requires_prescription in ("true", "false"):
             queryset = queryset.filter(requires_prescription=requires_prescription == "true")
         return queryset[:50]
+
+
+def get_or_create_merchant_store(user):
+    store = Store.objects.filter(owner=user, is_active=True).first()
+    if store:
+        return store
+
+    application = (
+        MerchantApplication.objects.filter(
+            applicant=user,
+            status=ApplicationStatus.APPROVED,
+        )
+        .order_by("-updated_at")
+        .first()
+    )
+    if not application:
+        return None
+
+    return ApplicationService.create_store_for_merchant(application)
+
+
+def money_payload(value):
+    amount = Decimal(value or 0).quantize(Decimal("0.01"))
+    return {
+        "value": str(amount),
+        "currency": "PHP",
+        "formatted": f"₱{amount:,.0f}",
+    }
+
+
+def product_stock_status(product):
+    if not product.track_inventory:
+        return "NOT_TRACKED"
+    if not product.stock_quantity:
+        return "OUT_OF_STOCK"
+    if product.stock_quantity <= 5:
+        return "LOW_STOCK"
+    return "IN_STOCK"
+
+
+def product_payload(product, request):
+    stock_status = product_stock_status(product)
+    return {
+        "id": str(product.id),
+        "name": product.name,
+        "description": product.description or "",
+        "category": {
+            "id": str(product.category_id),
+            "name": product.category.name,
+            "slug": product.category.slug,
+        },
+        "price": money_payload(product.price),
+        "stock_quantity": product.stock_quantity if product.track_inventory else None,
+        "track_inventory": product.track_inventory,
+        "low_stock_threshold": 5,
+        "stock_status": stock_status,
+        "availability_status": "AVAILABLE" if product.is_available and product.is_active else "UNAVAILABLE",
+        "is_available": product.is_available,
+        "image_url": request.build_absolute_uri(product.image.url) if product.image else "",
+        "sku": product.slug or "",
+        "updated_at": product.updated_at.isoformat(),
+    }
+
+
+class MerchantProductListView(APIView):
+    permission_classes = [IsMerchant]
+
+    def get(self, request):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        query = request.query_params.get("q", "").strip()
+        category = request.query_params.get("category", "ALL")
+        status_filter = request.query_params.get("status", "ALL")
+        page = max(int(request.query_params.get("page", "1") or 1), 1)
+        page_size = min(max(int(request.query_params.get("page_size", "10") or 10), 1), 50)
+
+        base_products = Product.objects.select_related("category").filter(category__store=store)
+        all_products = base_products
+        filtered_products = base_products
+
+        if query:
+            filtered_products = filtered_products.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(slug__icontains=query)
+            )
+        if category and category != "ALL":
+            filtered_products = filtered_products.filter(category__slug=category)
+        if status_filter == "AVAILABLE":
+            filtered_products = filtered_products.filter(is_active=True, is_available=True)
+        elif status_filter == "UNAVAILABLE":
+            filtered_products = filtered_products.filter(Q(is_active=False) | Q(is_available=False))
+        elif status_filter == "LOW_STOCK":
+            filtered_products = filtered_products.filter(
+                track_inventory=True,
+                stock_quantity__gt=0,
+                stock_quantity__lte=5,
+            )
+        elif status_filter == "OUT_OF_STOCK":
+            filtered_products = filtered_products.filter(
+                track_inventory=True,
+                stock_quantity__lte=0,
+            )
+
+        paginator = Paginator(filtered_products.order_by("name"), page_size)
+        page_obj = paginator.get_page(page)
+        categories = Category.objects.filter(store=store, is_active=True).order_by("order", "name")
+        inventory_enabled = (
+            store.vertical.slug != "restaurant"
+            and all_products.filter(track_inventory=True).exists()
+        )
+
+        return Response(
+            {
+                "summary": {
+                    "total_products": all_products.count(),
+                    "available_products": all_products.filter(is_active=True, is_available=True).count(),
+                    "unavailable_products": all_products.filter(Q(is_active=False) | Q(is_available=False)).count(),
+                    "low_stock_products": all_products.filter(
+                        track_inventory=True,
+                        stock_quantity__gt=0,
+                        stock_quantity__lte=5,
+                    ).count(),
+                },
+                "categories": [
+                    {"id": str(item.id), "name": item.name, "slug": item.slug}
+                    for item in categories
+                ],
+                "products": [
+                    product_payload(product, request)
+                    for product in page_obj.object_list
+                ],
+                "pagination": {
+                    "page": page_obj.number,
+                    "page_size": page_size,
+                    "total_pages": paginator.num_pages or 1,
+                    "total_items": paginator.count,
+                    "has_next": page_obj.has_next(),
+                    "has_previous": page_obj.has_previous(),
+                },
+                "inventory_enabled": inventory_enabled,
+            }
+        )
 
 class GlobalProductSearchView(APIView):
     permission_classes = [permissions.AllowAny]

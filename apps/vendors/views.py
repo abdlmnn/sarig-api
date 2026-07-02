@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
-from django.db.models import Avg, Count, F, Sum
+from django.db.models import Avg, Count, Sum
 from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,12 +18,17 @@ from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
-from .dashboard import build_merchant_dashboard_overview, store_availability_payload, PH_TZ
+from .dashboard import (
+    PH_TZ,
+    build_merchant_dashboard_overview,
+    store_availability_payload as dashboard_store_availability_payload,
+)
 from .models import Store, BusinessVertical
 from .serializers import StoreSerializer, BusinessVerticalSerializer, StoreStatusUpdateSerializer
 from .permissions import IsMerchantOrAdmin
 
 logger = logging.getLogger(__name__)
+
 
 class BusinessVerticalViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BusinessVerticalSerializer
@@ -258,7 +263,7 @@ class MerchantStoreStatusView(APIView):
         store.manual_override_reason = serializer.validated_data.get("reason", "")
         store.save(update_fields=["manual_override", "manual_override_reason", "updated_at"])
 
-        availability = store_availability_payload(store, timezone.now().astimezone(PH_TZ))
+        availability = dashboard_store_availability_payload(store, timezone.now().astimezone(PH_TZ))
         return Response(
             {
                 "store_id": str(store.id),
