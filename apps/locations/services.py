@@ -181,5 +181,9 @@ def route_estimate(origin, destination):
     try:
         return OpenRouteService.route_estimate(origin, destination)
     except (LocationProviderError, requests.RequestException, ValueError, KeyError) as exc:
-        logger.warning("Route provider fallback used: %s", exc)
+        message = str(exc)
+        if isinstance(exc, LocationProviderError) and "API key is not configured" in message:
+            logger.debug("Route provider fallback used: %s", exc)
+        else:
+            logger.warning("Route provider fallback used: %s", exc)
         return haversine_route_estimate(origin, destination)
