@@ -86,14 +86,6 @@ class Store(models.Model):
     manual_override_reason = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
     auto_accept_orders = models.BooleanField(default=False)
-    business_hours = models.JSONField(default=list, blank=True)
-    manual_override = models.CharField(
-        max_length=30,
-        choices=StoreManualOverride.choices,
-        null=True,
-        blank=True,
-    )
-    manual_override_reason = models.CharField(max_length=255, blank=True)
     
     # Metadata
     image = models.ImageField(upload_to="stores/", null=True, blank=True)
