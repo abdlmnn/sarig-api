@@ -22,7 +22,7 @@ from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from .dashboard import build_merchant_dashboard_overview, store_availability_payload, PH_TZ
-from .models import Store, BusinessVertical
+from .models import Store, BusinessVertical, StoreManualOverride
 from .serializers import StoreSerializer, BusinessVerticalSerializer, StoreStatusUpdateSerializer
 from .permissions import IsMerchantOrAdmin
 
