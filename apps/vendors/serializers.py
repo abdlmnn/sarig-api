@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.common.validators import validate_image_upload
-from .models import BusinessVertical, Store
+from .models import BusinessVertical, Store, StoreManualOverride
 
 
 class BusinessVerticalSerializer(serializers.ModelSerializer):
@@ -55,3 +55,12 @@ class StoreSerializer(serializers.ModelSerializer):
     def validate_image(self, value):
         validate_image_upload(value)
         return value
+
+
+class StoreStatusUpdateSerializer(serializers.Serializer):
+    manual_override = serializers.ChoiceField(
+        choices=StoreManualOverride.choices,
+        allow_null=True,
+        required=False,
+    )
+    reason = serializers.CharField(allow_blank=True, max_length=255, required=False)

@@ -15,6 +15,13 @@ class StoreDeliveryTime(models.TextChoices):
     ALL_DAY = "ALL_DAY", "All day"
 
 
+class StoreManualOverride(models.TextChoices):
+    OPEN_NOW = "OPEN_NOW", "Open now"
+    CLOSED_MANUALLY = "CLOSED_MANUALLY", "Closed manually"
+    CLOSED_TEMPORARILY = "CLOSED_TEMPORARILY", "Closed temporarily"
+    PAUSED_ORDERS = "PAUSED_ORDERS", "Paused orders"
+
+
 class BusinessVertical(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
@@ -69,6 +76,14 @@ class Store(models.Model):
     is_open = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     auto_accept_orders = models.BooleanField(default=False)
+    business_hours = models.JSONField(default=list, blank=True)
+    manual_override = models.CharField(
+        max_length=30,
+        choices=StoreManualOverride.choices,
+        null=True,
+        blank=True,
+    )
+    manual_override_reason = models.CharField(max_length=255, blank=True)
     
     # Metadata
     image = models.ImageField(upload_to="stores/", null=True, blank=True)
