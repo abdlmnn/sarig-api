@@ -171,11 +171,13 @@ class ApplicationService:
         if missing_fields:
             raise ValidationError(f"Merchant application is missing required store fields: {', '.join(missing_fields)}.")
 
-        vertical_name = application.get_business_type_display()
-        vertical, _ = BusinessVertical.objects.get_or_create(
-            slug=slugify(vertical_name),
-            defaults={"name": vertical_name},
-        )
+        vertical = application.business_vertical
+        if vertical is None:
+            vertical_name = application.get_business_type_display()
+            vertical, _ = BusinessVertical.objects.get_or_create(
+                slug=slugify(vertical_name),
+                defaults={"name": vertical_name},
+            )
 
         return Store.objects.create(
             owner=application.applicant,

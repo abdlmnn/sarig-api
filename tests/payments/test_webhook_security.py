@@ -23,7 +23,10 @@ class PayMongoWebhookSecurityTests(TestCase):
         self.client = APIClient()
         merchant = User.objects.create_user(username="m1", email="m1@test.com", password="pw12345")
         customer = User.objects.create_user(username="c1", email="c1@test.com", password="pw12345")
-        vertical = BusinessVertical.objects.create(name="Restaurant", slug="restaurant")
+        vertical, _ = BusinessVertical.objects.get_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant"},
+        )
         store = Store.objects.create(
             owner=merchant,
             vertical=vertical,

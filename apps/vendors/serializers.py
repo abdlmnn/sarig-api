@@ -63,4 +63,8 @@ class StoreStatusUpdateSerializer(serializers.Serializer):
         allow_null=True,
         required=False,
     )
-    reason = serializers.CharField(allow_blank=True, max_length=255, required=False)
+    reason = serializers.CharField(
+        allow_blank=True,
+        max_length=255,
+        required=False,
+    )
