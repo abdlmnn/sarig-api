@@ -1,7 +1,18 @@
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from rest_framework import viewsets, permissions
+from django.db.models import Avg, Q
+from rest_framework import permissions, viewsets
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.onboarding.models import ApplicationStatus, MerchantApplication
+from apps.onboarding.services import ApplicationService
+from apps.riders.services import RiderDispatcherService
+from apps.users.geo import get_lat_lng
+from apps.users.permissions import IsMerchant
+from apps.vendors.models import Store
+
 from .models import Category, Product
 from .serializers import CategorySerializer, ProductSerializer
 
@@ -30,18 +41,6 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         if category_id:
             queryset = queryset.filter(category_id=category_id)
         return queryset
-
-
-from rest_framework.response import Response
-from django.db.models import Q, Avg
-from rest_framework.views import APIView
-from apps.onboarding.models import ApplicationStatus, MerchantApplication
-from apps.onboarding.services import ApplicationService
-from apps.users.permissions import IsMerchant
-from apps.vendors.models import Store
-from apps.riders.services import RiderDispatcherService # Use the haversine from here
-from apps.users.geo import get_lat_lng
-
 
 def get_or_create_merchant_store(user):
     store = Store.objects.filter(owner=user, is_active=True).first()
