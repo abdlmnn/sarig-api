@@ -25,6 +25,28 @@ class Category(models.Model):
 
 
 class Product(models.Model):
+    class ProductType(models.TextChoices):
+        FOOD = "FOOD", "Food"
+        MEDICINE = "MEDICINE", "Medicine"
+        GROCERY = "GROCERY", "Grocery"
+        GENERAL = "GENERAL", "General"
+
+    class InventoryMode(models.TextChoices):
+        NONE = "NONE", "None"
+        TRACKED = "TRACKED", "Tracked"
+
+    class UnitType(models.TextChoices):
+        ITEM = "ITEM", "Item"
+        SERVING = "SERVING", "Serving"
+        PACK = "PACK", "Pack"
+        BOTTLE = "BOTTLE", "Bottle"
+
+    class MedicineForm(models.TextChoices):
+        NONE = "NONE", "None"
+        TABLET = "TABLET", "Tablet"
+        CAPSULE = "CAPSULE", "Capsule"
+        SYRUP = "SYRUP", "Syrup"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     category = models.ForeignKey(
         Category, on_delete=models.CASCADE, related_name="products"
@@ -34,6 +56,16 @@ class Product(models.Model):
     description = models.TextField(blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     image = models.ImageField(upload_to="products/", null=True, blank=True)
+    product_type = models.CharField(max_length=20, choices=ProductType.choices, default=ProductType.FOOD)
+    brand_name = models.CharField(max_length=120, blank=True, default="")
+    generic_name = models.CharField(max_length=120, blank=True, default="")
+    dosage = models.CharField(max_length=80, blank=True, default="")
+    medicine_form = models.CharField(max_length=20, choices=MedicineForm.choices, default=MedicineForm.NONE)
+    medicine_reference_id = models.UUIDField(null=True, blank=True)
+    requires_prescription = models.BooleanField(default=False)
+    unit_type = models.CharField(max_length=20, choices=UnitType.choices, default=UnitType.ITEM)
+    inventory_mode = models.CharField(max_length=20, choices=InventoryMode.choices, default=InventoryMode.NONE)
+    preparation_time_minutes = models.PositiveIntegerField(null=True, blank=True)
     # --- The Super-App Inventory Upgrades ---
     is_available = models.BooleanField(default=True) # Manual override (e.g., "Kitchen closed")
     track_inventory = models.BooleanField(default=False) # False for coffee/food, True for groceries

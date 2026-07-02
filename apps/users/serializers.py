@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -60,6 +62,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
 class RoleAwareLoginSerializer(serializers.Serializer):
     identifier = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    remember_me = serializers.BooleanField(required=False, default=False)
 
     required_scope = None
 
@@ -89,11 +92,17 @@ class RoleAwareLoginSerializer(serializers.Serializer):
             raise self.auth_error("forbidden")
 
         refresh = RefreshToken.for_user(authenticated_user)
+        if attrs.get("remember_me"):
+            refresh.set_exp(lifetime=timedelta(days=14))
+        else:
+            refresh.set_exp(lifetime=timedelta(hours=12))
+
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "user": UserSerializer(authenticated_user).data,
             "account_type": self.required_scope,
+            "remember_me": attrs.get("remember_me", False),
         }
 
     def get_user_by_identifier(self, identifier):

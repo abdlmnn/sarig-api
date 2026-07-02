@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.marketing.models import DiscountType, PromoCode
@@ -78,6 +79,32 @@ RIDER_SEEDS = [
     ("Tariq", "Disomimba", "rider10@sarig.local", "+63 961-093-9770", "Marinaut West", "Rabiya Disomimba", "+63 917-200-1010", "Mother", VehicleType.BICYCLE, "Trinx Tempo", "", ApplicationStatus.PENDING, "", []),
 ]
 
+MERCHANT_APPLICATION_IDS = [
+    "MR-1028",
+    "MR-2034",
+    "MR-3140",
+    "MR-4256",
+    "MR-5362",
+    "MR-6478",
+    "MR-7584",
+    "MR-8690",
+    "MR-9706",
+    "MR-1812",
+]
+
+RIDER_APPLICATION_IDS = [
+    "RD-1028",
+    "RD-2034",
+    "RD-3140",
+    "RD-4256",
+    "RD-5362",
+    "RD-6478",
+    "RD-7584",
+    "RD-8690",
+    "RD-9706",
+    "RD-1812",
+]
+
 
 class Command(BaseCommand):
     help = "Seed onboarding and operations mock data for merchant/rider signup and admin dashboards."
@@ -111,14 +138,16 @@ class Command(BaseCommand):
     def reset_mock_data(self):
         merchant_emails = [seed[3] for seed in MERCHANT_SEEDS]
         rider_emails = [seed[2] for seed in RIDER_SEEDS]
-        app_ids = list(MerchantApplication.objects.filter(company_email__in=merchant_emails).values_list("application_id", flat=True))
-        app_ids += list(RiderApplication.objects.filter(email__in=rider_emails).values_list("application_id", flat=True))
+        merchant_filter = Q(company_email__in=merchant_emails) | Q(application_id__in=MERCHANT_APPLICATION_IDS)
+        rider_filter = Q(email__in=rider_emails) | Q(application_id__in=RIDER_APPLICATION_IDS)
+        app_ids = list(MerchantApplication.objects.filter(merchant_filter).values_list("application_id", flat=True))
+        app_ids += list(RiderApplication.objects.filter(rider_filter).values_list("application_id", flat=True))
 
         ApplicationStatusHistory.objects.filter(application_id__in=app_ids).delete()
         ApplicationEditToken.objects.filter(application_id__in=app_ids).delete()
         AccountSetupToken.objects.filter(application_id__in=app_ids).delete()
-        MerchantApplication.objects.filter(company_email__in=merchant_emails).delete()
-        RiderApplication.objects.filter(email__in=rider_emails).delete()
+        MerchantApplication.objects.filter(merchant_filter).delete()
+        RiderApplication.objects.filter(rider_filter).delete()
         PaymentTransaction.objects.filter(external_transaction_id__startswith="mock_").delete()
         Order.objects.filter(delivery_address_text__startswith="Mock Address ").delete()
         Ride.objects.filter(cancel_reason__startswith="mock_seed").delete()
@@ -171,9 +200,11 @@ class Command(BaseCommand):
         for index, seed in enumerate(MERCHANT_SEEDS, start=1):
             lat, lng = ZONE_COORDS[seed[8]]
             pinned_address = f"{seed[9]}, {seed[8]}, Marawi City"
+            application_id = MERCHANT_APPLICATION_IDS[index - 1]
             application, _ = MerchantApplication.objects.get_or_create(
                 company_email=seed[3],
                 defaults={
+                    "application_id": application_id,
                     "business_name": seed[0],
                     "owner_first_name": seed[1],
                     "owner_last_name": seed[2],
@@ -197,6 +228,7 @@ class Command(BaseCommand):
                     "requested_fields": seed[13],
                 },
             )
+            self.assign_stable_application_id(application, application_id)
             application.business_name = seed[0]
             application.owner_first_name = seed[1]
             application.owner_last_name = seed[2]
@@ -228,9 +260,11 @@ class Command(BaseCommand):
     def seed_riders(self, admin_user):
         applications = []
         for index, seed in enumerate(RIDER_SEEDS, start=1):
+            application_id = RIDER_APPLICATION_IDS[index - 1]
             application, _ = RiderApplication.objects.get_or_create(
                 email=seed[2],
                 defaults={
+                    "application_id": application_id,
                     "first_name": seed[0],
                     "last_name": seed[1],
                     "phone_number": seed[3],
@@ -251,6 +285,7 @@ class Command(BaseCommand):
                     "requested_fields": seed[13],
                 },
             )
+            self.assign_stable_application_id(application, application_id)
             application.first_name = seed[0]
             application.last_name = seed[1]
             application.phone_number = seed[3]
@@ -275,6 +310,12 @@ class Command(BaseCommand):
             self.rebuild_application_state(application, admin_user, index + 20)
             applications.append(application)
         return applications
+
+    def assign_stable_application_id(self, application, application_id):
+        existing = application.__class__.objects.filter(application_id=application_id).exclude(pk=application.pk)
+        if existing.exists():
+            return
+        application.application_id = application_id
 
     def attach_merchant_files(self, application, index):
         if not application.dti_sec_certificate:
