@@ -2,7 +2,9 @@ from decimal import Decimal
 
 from django.core.paginator import Paginator
 from django.db.models import Avg, Q
-from rest_framework import permissions, viewsets
+from django.utils.text import slugify
+from rest_framework import permissions, status, viewsets
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -127,6 +129,7 @@ def product_payload(product, request):
 
 class MerchantProductListView(APIView):
     permission_classes = [IsMerchant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         store = get_or_create_merchant_store(request.user)
@@ -136,6 +139,7 @@ class MerchantProductListView(APIView):
         query = request.query_params.get("q", "").strip()
         category = request.query_params.get("category", "ALL")
         status_filter = request.query_params.get("status", "ALL")
+        sort = request.query_params.get("sort", "newest")
         page = max(int(request.query_params.get("page", "1") or 1), 1)
         page_size = min(max(int(request.query_params.get("page_size", "10") or 10), 1), 50)
 
@@ -148,6 +152,7 @@ class MerchantProductListView(APIView):
                 Q(name__icontains=query)
                 | Q(description__icontains=query)
                 | Q(slug__icontains=query)
+                | Q(sku__icontains=query)
             )
         if category and category != "ALL":
             filtered_products = filtered_products.filter(category__slug=category)
@@ -167,7 +172,15 @@ class MerchantProductListView(APIView):
                 stock_quantity__lte=0,
             )
 
-        paginator = Paginator(filtered_products.order_by("name"), page_size)
+        sort_map = {
+            "name_asc": "name",
+            "name_desc": "-name",
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "price_asc": "price",
+            "price_desc": "-price",
+        }
+        paginator = Paginator(filtered_products.order_by(sort_map.get(sort, "-created_at")), page_size)
         page_obj = paginator.get_page(page)
         categories = Category.objects.filter(store=store, is_active=True).order_by("order", "name")
         inventory_enabled = (
@@ -186,6 +199,14 @@ class MerchantProductListView(APIView):
                         stock_quantity__gt=0,
                         stock_quantity__lte=5,
                     ).count(),
+                },
+                "merchant": {
+                    "business_name": store.name,
+                    "vertical": {
+                        "id": str(store.vertical_id),
+                        "name": store.vertical.name,
+                        "slug": store.vertical.slug,
+                    },
                 },
                 "categories": [
                     {"id": str(item.id), "name": item.name, "slug": item.slug}
@@ -206,6 +227,100 @@ class MerchantProductListView(APIView):
                 "inventory_enabled": inventory_enabled,
             }
         )
+
+    def post(self, request):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        category_id = request.data.get("category")
+        category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
+        if not category:
+            return Response({"category": "Select a valid category for this store."}, status=400)
+
+        data = request.data.copy()
+        data["category"] = str(category.id)
+        data["product_type"] = data.get("product_type") or "food"
+        data["inventory_mode"] = data.get("inventory_mode") or "none"
+
+        if store.vertical.slug == "restaurant":
+            data["product_type"] = "food"
+            data["inventory_mode"] = "none"
+            data["track_inventory"] = False
+            data["stock_quantity"] = None
+
+        name = str(data.get("name", "")).strip()
+        if name and not data.get("slug"):
+            base_slug = slugify(name)[:240] or "product"
+            slug = base_slug
+            counter = 2
+            while Product.objects.filter(category__store=store, slug=slug).exists():
+                suffix = f"-{counter}"
+                slug = f"{base_slug[:240 - len(suffix)]}{suffix}"
+                counter += 1
+            data["slug"] = slug
+
+        serializer = ProductSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.save()
+
+        return Response(product_payload(product, request), status=status.HTTP_201_CREATED)
+
+
+def merchant_product_or_none(user, product_id):
+    store = get_or_create_merchant_store(user)
+    if not store:
+        return None, None
+
+    product = Product.objects.select_related("category").filter(
+        id=product_id,
+        category__store=store,
+    ).first()
+    return store, product
+
+
+class MerchantProductDetailView(APIView):
+    permission_classes = [IsMerchant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def patch(self, request, product_id):
+        store, product = merchant_product_or_none(request.user, product_id)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+        if not product:
+            return Response({"detail": "Product not found."}, status=404)
+
+        data = request.data.copy()
+        category_id = data.get("category")
+        if category_id:
+            category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
+            if not category:
+                return Response({"category": "Select a valid category for this store."}, status=400)
+            data["category"] = str(category.id)
+
+        data["product_type"] = data.get("product_type") or product.product_type
+        data["inventory_mode"] = data.get("inventory_mode") or product.inventory_mode
+        if store.vertical.slug == "restaurant":
+            data["product_type"] = "food"
+            data["inventory_mode"] = "none"
+            data["track_inventory"] = False
+            data["stock_quantity"] = None
+
+        serializer = ProductSerializer(product, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.save()
+
+        return Response(product_payload(product, request))
+
+    def delete(self, request, product_id):
+        store, product = merchant_product_or_none(request.user, product_id)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+        if not product:
+            return Response({"detail": "Product not found."}, status=404)
+
+        product.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class GlobalProductSearchView(APIView):
     permission_classes = [permissions.AllowAny]
