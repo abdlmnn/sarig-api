@@ -128,6 +128,18 @@ def product_payload(product, request):
     }
 
 
+def merchant_product_or_none(user, product_id):
+    store = get_or_create_merchant_store(user)
+    if not store:
+        return None, None
+
+    product = Product.objects.select_related("category").filter(
+        id=product_id,
+        category__store=store,
+    ).first()
+    return store, product
+
+
 class MerchantProductListView(APIView):
     permission_classes = [IsMerchant]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -243,12 +255,8 @@ class MerchantProductListView(APIView):
         data["category"] = str(category.id)
         data["product_type"] = data.get("product_type") or "food"
         data["inventory_mode"] = data.get("inventory_mode") or "none"
-
-        if store.vertical.slug == "restaurant":
-            data["product_type"] = "food"
-            data["inventory_mode"] = "none"
-            data["track_inventory"] = False
-            data["stock_quantity"] = None
+        data["track_inventory"] = False
+        data["stock_quantity"] = None
 
         name = str(data.get("name", "")).strip()
         if name and not data.get("slug"):
@@ -266,18 +274,6 @@ class MerchantProductListView(APIView):
         product = serializer.save()
 
         return Response(product_payload(product, request), status=status.HTTP_201_CREATED)
-
-
-def merchant_product_or_none(user, product_id):
-    store = get_or_create_merchant_store(user)
-    if not store:
-        return None, None
-
-    product = Product.objects.select_related("category").filter(
-        id=product_id,
-        category__store=store,
-    ).first()
-    return store, product
 
 
 class MerchantProductDetailView(APIView):

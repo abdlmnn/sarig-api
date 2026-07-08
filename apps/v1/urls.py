@@ -15,6 +15,7 @@ from apps.onboarding.views import (
     AdminRequestChangesView,
 )
 from apps.catalog.views import MerchantProductDetailView, MerchantProductListView
+from apps.vendors.views import MerchantDashboardOverviewView, MerchantStoreStatusView
 
 app_name = "v1"
 
