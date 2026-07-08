@@ -122,7 +122,8 @@ def product_payload(product, request):
         "availability_status": "AVAILABLE" if product.is_available and product.is_active else "UNAVAILABLE",
         "is_available": product.is_available,
         "image_url": request.build_absolute_uri(product.image.url) if product.image else "",
-        "sku": product.slug or "",
+        "sku": product.sku or "",
+        "preparation_time_minutes": product.preparation_time_minutes,
         "updated_at": product.updated_at.isoformat(),
     }
 
