@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from django.db.models import Avg, Q
+from django.db.models import Avg, Count, Max, Q
 from django.utils.text import slugify
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -128,6 +128,235 @@ def product_payload(product, request):
     }
 
 
+def category_payload(category):
+    product_count = getattr(category, "product_count", None)
+    available_count = getattr(category, "available_product_count", None)
+    unavailable_count = getattr(category, "unavailable_product_count", None)
+
+    if product_count is None:
+        product_count = category.products.count()
+    if available_count is None:
+        available_count = category.products.filter(is_active=True, is_available=True).count()
+    if unavailable_count is None:
+        unavailable_count = category.products.filter(Q(is_active=False) | Q(is_available=False)).count()
+
+    return {
+        "id": str(category.id),
+        "name": category.name,
+        "slug": category.slug,
+        "description": category.description or "",
+        "is_active": category.is_active,
+        "order": category.order,
+        "product_count": product_count,
+        "available_product_count": available_count,
+        "unavailable_product_count": unavailable_count,
+    }
+
+
+def category_queryset_for_store(store):
+    return (
+        Category.objects.filter(store=store, is_active=True)
+        .annotate(
+            product_count=Count("products"),
+            available_product_count=Count(
+                "products",
+                filter=Q(products__is_active=True, products__is_available=True),
+            ),
+            unavailable_product_count=Count(
+                "products",
+                filter=Q(products__is_active=False) | Q(products__is_available=False),
+            ),
+        )
+        .order_by("order", "name")
+    )
+
+
+def unique_category_slug(store, name, category_id=None):
+    base_slug = slugify(name)[:100] or "category"
+    slug = base_slug
+    counter = 2
+    queryset = Category.objects.filter(store=store, slug=slug)
+    if category_id:
+        queryset = queryset.exclude(id=category_id)
+
+    while queryset.exists():
+        suffix = f"-{counter}"
+        slug = f"{base_slug[:100 - len(suffix)]}{suffix}"
+        queryset = Category.objects.filter(store=store, slug=slug)
+        if category_id:
+            queryset = queryset.exclude(id=category_id)
+        counter += 1
+
+    return slug
+
+
+class CategoryManagementListView(APIView):
+    permission_classes = [IsMerchant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        return Response(
+            {
+                "categories": [
+                    category_payload(category)
+                    for category in category_queryset_for_store(store)
+                ]
+            }
+        )
+
+    def post(self, request):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        name = str(request.data.get("name", "")).strip()
+        if not name:
+            return Response({"name": "Category name is required."}, status=400)
+
+        category = Category.objects.create(
+            store=store,
+            name=name,
+            slug=unique_category_slug(store, name),
+            description=str(request.data.get("description", "") or "").strip(),
+            order=(Category.objects.filter(store=store).aggregate(max_order=Max("order"))["max_order"] or 0) + 1,
+            is_active=True,
+        )
+
+        return Response(category_payload(category), status=status.HTTP_201_CREATED)
+
+
+class CategoryManagementDetailView(APIView):
+    permission_classes = [IsMerchant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def patch(self, request, category_id):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
+        if not category:
+            return Response({"detail": "Category not found."}, status=404)
+
+        if "name" in request.data:
+            name = str(request.data.get("name", "")).strip()
+            if not name:
+                return Response({"name": "Category name is required."}, status=400)
+            category.name = name
+            category.slug = unique_category_slug(store, name, category_id=category.id)
+
+        if "description" in request.data:
+            category.description = str(request.data.get("description", "") or "").strip()
+        category.save(update_fields=["name", "slug", "description"])
+        return Response(category_payload(category))
+
+    def delete(self, request, category_id):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
+        if not category:
+            return Response({"detail": "Category not found."}, status=404)
+
+        if category.products.filter(is_active=True).exists():
+            return Response(
+                {"detail": "Move or delete products in this category first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        category.is_active = False
+        category.save(update_fields=["is_active"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CategoryMoveView(APIView):
+    permission_classes = [IsMerchant]
+
+    def patch(self, request, category_id):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        direction = str(request.data.get("direction", "")).lower()
+        if direction not in {"up", "down", "top", "bottom"}:
+            return Response({"direction": "Use up, down, top, or bottom."}, status=400)
+
+        category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
+        if not category:
+            return Response({"detail": "Category not found."}, status=404)
+
+        ordered_categories = list(
+            Category.objects.filter(store=store, is_active=True).order_by("order", "name", "id")
+        )
+        current_index = next(
+            (index for index, item in enumerate(ordered_categories) if item.id == category.id),
+            None,
+        )
+        if current_index is None:
+            return Response({"detail": "Category not found."}, status=404)
+
+        if direction == "top":
+            target_index = 0
+        elif direction == "bottom":
+            target_index = len(ordered_categories) - 1
+        else:
+            target_index = current_index - 1 if direction == "up" else current_index + 1
+
+        if target_index < 0 or target_index >= len(ordered_categories) or target_index == current_index:
+            return Response(
+                {"categories": [category_payload(item) for item in category_queryset_for_store(store)]}
+            )
+
+        selected_category = ordered_categories.pop(current_index)
+        ordered_categories.insert(target_index, selected_category)
+
+        for index, item in enumerate(ordered_categories):
+            if item.order != index:
+                item.order = index
+                item.save(update_fields=["order"])
+
+        return Response(
+            {"categories": [category_payload(item) for item in category_queryset_for_store(store)]}
+        )
+
+
+class CategoryReorderView(APIView):
+    permission_classes = [IsMerchant]
+
+    def patch(self, request):
+        store = get_or_create_merchant_store(request.user)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+
+        category_ids = request.data.get("category_ids")
+        if not isinstance(category_ids, list) or not category_ids:
+            return Response({"category_ids": "Provide category_ids as a non-empty list."}, status=400)
+
+        categories = list(Category.objects.filter(store=store, is_active=True))
+        category_map = {str(category.id): category for category in categories}
+
+        if set(category_ids) != set(category_map.keys()):
+            return Response(
+                {"category_ids": "Category list must include every active category exactly once."},
+                status=400,
+            )
+
+        for index, category_id in enumerate(category_ids):
+            category = category_map[str(category_id)]
+            if category.order != index:
+                category.order = index
+                category.save(update_fields=["order"])
+
+        return Response(
+            {"categories": [category_payload(item) for item in category_queryset_for_store(store)]}
+        )
+
+
 class ProductManagementListView(APIView):
     permission_classes = [IsMerchant]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -183,7 +412,7 @@ class ProductManagementListView(APIView):
         }
         paginator = Paginator(filtered_products.order_by(sort_map.get(sort, "-created_at")), page_size)
         page_obj = paginator.get_page(page)
-        categories = Category.objects.filter(store=store, is_active=True).order_by("order", "name")
+        categories = category_queryset_for_store(store)
         inventory_enabled = (
             store.vertical.slug != "restaurant"
             and all_products.filter(track_inventory=True).exists()
@@ -210,7 +439,7 @@ class ProductManagementListView(APIView):
                     },
                 },
                 "categories": [
-                    {"id": str(item.id), "name": item.name, "slug": item.slug}
+                    category_payload(item)
                     for item in categories
                 ],
                 "products": [

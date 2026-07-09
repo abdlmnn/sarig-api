@@ -1,9 +1,109 @@
+OPERATIONAL_ZONE_BOUNDARIES = {
+    "poblacion-core": [
+        ["7.999700", "124.283200"],
+        ["8.001400", "124.282700"],
+        ["8.004400", "124.284800"],
+        ["8.004100", "124.288000"],
+        ["8.001100", "124.289200"],
+        ["7.998900", "124.286800"],
+    ],
+    "saduc-corridor": [
+        ["8.008700", "124.288600"],
+        ["8.011600", "124.287900"],
+        ["8.015800", "124.290500"],
+        ["8.015200", "124.294400"],
+        ["8.011900", "124.295100"],
+        ["8.008500", "124.292100"],
+    ],
+    "matampay-calocan": [
+        ["8.015400", "124.280800"],
+        ["8.019000", "124.279600"],
+        ["8.022900", "124.282400"],
+        ["8.022100", "124.287400"],
+        ["8.018200", "124.288400"],
+        ["8.014900", "124.284900"],
+    ],
+    "marinaut-msu": [
+        ["7.998900", "124.266800"],
+        ["8.002700", "124.265900"],
+        ["8.006000", "124.269700"],
+        ["8.004500", "124.275600"],
+        ["8.000100", "124.276200"],
+        ["7.997200", "124.271700"],
+    ],
+    "basak-commercial": [
+        ["7.997400", "124.293800"],
+        ["8.000800", "124.292500"],
+        ["8.004100", "124.295900"],
+        ["8.003700", "124.300500"],
+        ["7.999800", "124.301100"],
+        ["7.996900", "124.297700"],
+    ],
+    "ambolong-tuca": [
+        ["7.994400", "124.282200"],
+        ["7.997700", "124.280900"],
+        ["8.000500", "124.283900"],
+        ["7.999600", "124.287600"],
+        ["7.996000", "124.288100"],
+        ["7.993900", "124.285200"],
+    ],
+    "bubonga-cadayonan": [
+        ["8.001800", "124.289800"],
+        ["8.005100", "124.289300"],
+        ["8.007600", "124.292100"],
+        ["8.006300", "124.295700"],
+        ["8.002900", "124.296000"],
+        ["8.000700", "124.293000"],
+    ],
+    "sagonsongan-boganga": [
+        ["7.982900", "124.256900"],
+        ["7.987600", "124.254900"],
+        ["7.992400", "124.258700"],
+        ["7.991800", "124.265400"],
+        ["7.986200", "124.267300"],
+        ["7.981700", "124.262700"],
+    ],
+    "papandayan-guimba": [
+        ["8.002600", "124.276900"],
+        ["8.006200", "124.275900"],
+        ["8.008800", "124.278700"],
+        ["8.007600", "124.282600"],
+        ["8.004000", "124.283000"],
+        ["8.001900", "124.280000"],
+    ],
+    "bangon-moncado": [
+        ["8.006900", "124.271200"],
+        ["8.011100", "124.270600"],
+        ["8.014500", "124.274000"],
+        ["8.013100", "124.279000"],
+        ["8.009000", "124.279400"],
+        ["8.006000", "124.275600"],
+    ],
+    "dulay-kilala-patani": [
+        ["8.005600", "124.279400"],
+        ["8.009000", "124.278300"],
+        ["8.012000", "124.281300"],
+        ["8.010900", "124.285500"],
+        ["8.007200", "124.285900"],
+        ["8.004800", "124.282800"],
+    ],
+    "outer-east": [
+        ["8.003400", "124.285600"],
+        ["8.006700", "124.284700"],
+        ["8.009000", "124.287700"],
+        ["8.007900", "124.292000"],
+        ["8.004500", "124.292100"],
+        ["8.002600", "124.288900"],
+    ],
+}
+
+
 MARAWI_SERVICE_ZONES = [
     {
         "name": "Poblacion Core",
         "slug": "poblacion-core",
-        "center_latitude": "8.002900",
-        "center_longitude": "124.285500",
+        "center_latitude": "8.001800",
+        "center_longitude": "124.286300",
         "barangay_names": [
             "Banggolo Poblacion",
             "Dansalan",
@@ -24,8 +124,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Saduc Corridor",
         "slug": "saduc-corridor",
-        "center_latitude": "8.013800",
-        "center_longitude": "124.292800",
+        "center_latitude": "8.011900",
+        "center_longitude": "124.291100",
         "barangay_names": [
             "Saduc Proper",
             "Raya Saduc",
@@ -42,8 +142,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Matampay Calocan",
         "slug": "matampay-calocan",
-        "center_latitude": "8.018700",
-        "center_longitude": "124.288700",
+        "center_latitude": "8.018900",
+        "center_longitude": "124.283600",
         "barangay_names": [
             "Matampay",
             "Kormatan Matampay",
@@ -61,8 +161,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Marinaut MSU",
         "slug": "marinaut-msu",
-        "center_latitude": "8.003900",
-        "center_longitude": "124.268800",
+        "center_latitude": "8.001700",
+        "center_longitude": "124.271500",
         "barangay_names": [
             "Lumbac Marinaut",
             "Marinaut East",
@@ -79,8 +179,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Basak Commercial",
         "slug": "basak-commercial",
-        "center_latitude": "8.004700",
-        "center_longitude": "124.299400",
+        "center_latitude": "8.000600",
+        "center_longitude": "124.296900",
         "barangay_names": [
             "Basak Malutlut",
             "East Basak",
@@ -94,8 +194,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Ambolong Tuca",
         "slug": "ambolong-tuca",
-        "center_latitude": "7.998700",
-        "center_longitude": "124.287900",
+        "center_latitude": "7.997100",
+        "center_longitude": "124.284800",
         "barangay_names": [
             "Ambolong",
             "Boto Ambolong",
@@ -109,8 +209,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Bubonga Cadayonan",
         "slug": "bubonga-cadayonan",
-        "center_latitude": "8.002500",
-        "center_longitude": "124.295300",
+        "center_latitude": "8.004400",
+        "center_longitude": "124.292600",
         "barangay_names": [
             "Bubonga Pagalamatan",
             "Bubonga Lilod Madaya",
@@ -128,8 +228,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Sagonsongan Boganga",
         "slug": "sagonsongan-boganga",
-        "center_latitude": "7.985700",
-        "center_longitude": "124.292600",
+        "center_latitude": "7.987300",
+        "center_longitude": "124.261300",
         "barangay_names": [
             "Sagonsongan",
             "Boganga",
@@ -145,8 +245,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Papandayan Guimba",
         "slug": "papandayan-guimba",
-        "center_latitude": "8.006800",
-        "center_longitude": "124.279000",
+        "center_latitude": "8.005300",
+        "center_longitude": "124.279900",
         "barangay_names": [
             "Papandayan",
             "Papandayan Caniogan",
@@ -161,8 +261,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Bangon Moncado",
         "slug": "bangon-moncado",
-        "center_latitude": "8.011000",
-        "center_longitude": "124.277600",
+        "center_latitude": "8.010300",
+        "center_longitude": "124.275000",
         "barangay_names": [
             "Bangon",
             "Beyaba-Damag",
@@ -180,8 +280,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Dulay Kilala Patani",
         "slug": "dulay-kilala-patani",
-        "center_latitude": "8.009500",
-        "center_longitude": "124.281700",
+        "center_latitude": "8.008500",
+        "center_longitude": "124.282100",
         "barangay_names": [
             "Dulay Proper",
             "Dulay West",
@@ -197,8 +297,8 @@ MARAWI_SERVICE_ZONES = [
     {
         "name": "Outer East",
         "slug": "outer-east",
-        "center_latitude": "8.006100",
-        "center_longitude": "124.289900",
+        "center_latitude": "8.006000",
+        "center_longitude": "124.288600",
         "barangay_names": [
             "Bito Buadi Itowa",
             "Bito Buadi Parba",
@@ -209,3 +309,6 @@ MARAWI_SERVICE_ZONES = [
         "priority": 120,
     },
 ]
+
+for zone in MARAWI_SERVICE_ZONES:
+    zone["boundary"] = OPERATIONAL_ZONE_BOUNDARIES[zone["slug"]]

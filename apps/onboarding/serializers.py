@@ -230,12 +230,14 @@ class StatusResponseSerializer(serializers.Serializer):
 
 
 class RequestChangesSerializer(serializers.Serializer):
-    admin_remarks = serializers.CharField()
+    admin_remarks = serializers.CharField(required=False, allow_blank=True)
+    email_message = serializers.CharField(required=False, allow_blank=True)
     requested_fields = serializers.ListField(child=serializers.CharField(), allow_empty=False)
 
 
 class RejectApplicationSerializer(serializers.Serializer):
-    admin_remarks = serializers.CharField()
+    admin_remarks = serializers.CharField(required=False, allow_blank=True)
+    email_message = serializers.CharField(required=False, allow_blank=True)
 
 
 class AccountSetupSerializer(serializers.Serializer):

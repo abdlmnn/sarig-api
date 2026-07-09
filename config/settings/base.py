@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.catalog",
     "apps.orders",
     "apps.payments",
+    "apps.email_templates",
     "apps.onboarding",
     "apps.riders",
     "apps.marketing",

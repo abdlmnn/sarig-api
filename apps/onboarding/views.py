@@ -524,9 +524,10 @@ class AdminRequestChangesView(APIView):
         serializer = RequestChangesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         application = get_application_or_404(application_id)
+        remarks = serializer.validated_data.get("email_message") or serializer.validated_data.get("admin_remarks") or ""
         edit_token = ApplicationService.request_changes(
             application,
-            serializer.validated_data["admin_remarks"],
+            remarks,
             serializer.validated_data["requested_fields"],
             actor=request.user,
         )
@@ -547,7 +548,8 @@ class AdminRejectApplicationView(APIView):
         serializer = RejectApplicationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         application = get_application_or_404(application_id)
-        ApplicationService.reject_application(application, serializer.validated_data["admin_remarks"], actor=request.user)
+        remarks = serializer.validated_data.get("email_message") or serializer.validated_data.get("admin_remarks") or ""
+        ApplicationService.reject_application(application, remarks, actor=request.user)
         return Response(
             {
                 "application_id": application.application_id,
