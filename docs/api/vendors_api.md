@@ -1,14 +1,14 @@
-# Vendors API (v1)
+# Merchant API (v1)
 
 Base URL:
-`http://localhost:8000/api/v1/vendors/`
+`http://localhost:8000/api/v1/merchant/`
 
 ---
 
 ## BUSINESS VERTICALS
 
 ### List Verticals
-`GET /verticals/`
+`GET /business-verticals/`
 - Example: "Restaurant", "Pharmacy", "Transport".
 
 ---

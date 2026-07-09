@@ -1,9 +1,12 @@
+from datetime import timedelta
+
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F
+from django.db.models import Count, F, Sum
+from django.db.models.functions import TruncDate
 from decimal import Decimal
 from django.shortcuts import get_object_or_404
 import logging
@@ -13,10 +16,70 @@ from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatu
 from apps.payments.services import PayMongoService
 from apps.catalog.models import Product
 from apps.vendors.models import Store
+from apps.users.permissions import IsMerchant
+from apps.vendors.permissions import IsMerchantOrAdmin
 from .serializers import CheckoutRequestSerializer, OrderSerializer
+from .services import build_store_order_activity
 
 
 logger = logging.getLogger(__name__)
+
+
+class StoreOrderActivityView(APIView):
+    permission_classes = [IsMerchant]
+    throttle_scope = "search"
+
+    def get(self, request):
+        payload = build_store_order_activity(request)
+        if payload is None:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+        return Response(payload)
+
+
+class MerchantStoreOrderAnalyticsView(APIView):
+    permission_classes = [IsMerchantOrAdmin]
+
+    def get(self, request, store_id):
+        store = get_object_or_404(Store, id=store_id)
+
+        if not request.user.is_staff and store.owner != request.user:
+            return Response({"error": "You do not own this store."}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        seven_days_ago = today_start - timedelta(days=7)
+        delivered_orders = Order.objects.filter(store=store, status=OrderStatus.DELIVERED)
+
+        total_revenue = delivered_orders.aggregate(Sum("total_amount"))["total_amount__sum"] or 0
+        total_orders = delivered_orders.count()
+        today_revenue = delivered_orders.filter(created_at__gte=today_start).aggregate(Sum("total_amount"))["total_amount__sum"] or 0
+        today_orders = delivered_orders.filter(created_at__gte=today_start).count()
+        top_products = (
+            OrderItem.objects.filter(order__store=store, order__status=OrderStatus.DELIVERED)
+            .values("product__name")
+            .annotate(total_sold=Sum("quantity"))
+            .order_by("-total_sold")[:5]
+        )
+        sales_trend = (
+            delivered_orders.filter(created_at__gte=seven_days_ago)
+            .annotate(date=TruncDate("created_at"))
+            .values("date")
+            .annotate(daily_revenue=Sum("total_amount"), daily_orders=Count("id"))
+            .order_by("date")
+        )
+
+        return Response(
+            {
+                "overview": {
+                    "total_revenue": float(total_revenue),
+                    "total_orders": total_orders,
+                    "today_revenue": float(today_revenue),
+                    "today_orders": today_orders,
+                },
+                "top_products": top_products,
+                "sales_trend": list(sales_trend),
+            }
+        )
 
 
 class CheckoutView(APIView):

@@ -1,12 +1,10 @@
 from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
-from rest_framework import permissions, status
+from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.onboarding.models import ApplicationStatus, MerchantApplication, RiderApplication
-from apps.onboarding.services import ApplicationService, get_application
 from apps.orders.models import Order, OrderStatus
 from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
@@ -21,7 +19,6 @@ from .services import (
     envelope,
     finance_overview,
     marketing_overview,
-    onboarding_summary,
     zone_for_rider,
     zone_for_store,
     zone_merchants,
@@ -187,59 +184,6 @@ class ServiceZoneActivityView(APIView):
             )
         events.sort(key=lambda event: event["created_at"], reverse=True)
         return Response(envelope({"events": events[:20]}, "Zone activity loaded"))
-
-
-class AdminOnboardingSummaryView(APIView):
-    permission_classes = [permissions.IsAdminUser]
-
-    def get(self, request):
-        return Response(envelope(onboarding_summary(), "Onboarding summary loaded"))
-
-
-class AdminOnboardingDecisionView(APIView):
-    permission_classes = [permissions.IsAdminUser]
-
-    def post(self, request, application_id):
-        decision = str(request.data.get("decision", "")).lower()
-        admin_notes = request.data.get("admin_notes") or request.data.get("admin_remarks") or ""
-        change_requests = request.data.get("change_requests", [])
-        application = get_application(application_id)
-
-        if decision == "approved":
-            if isinstance(application, MerchantApplication):
-                ApplicationService.approve_merchant(application, actor=request.user)
-            else:
-                ApplicationService.approve_rider(application, actor=request.user)
-            saved_status = ApplicationStatus.APPROVED
-        elif decision == "changes_requested":
-            requested_fields = [item.get("field", "") for item in change_requests if item.get("field")]
-            ApplicationService.request_changes(application, admin_notes, requested_fields, actor=request.user)
-            saved_status = ApplicationStatus.REQUEST_CHANGES
-        elif decision == "rejected":
-            ApplicationService.reject_application(application, admin_notes, actor=request.user)
-            saved_status = ApplicationStatus.REJECTED
-        else:
-            return Response(
-                envelope(None, "Validation failed", success=False, errors={"decision": ["Use approved, changes_requested, or rejected."]}),
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        application.refresh_from_db()
-        response_status = {
-            ApplicationStatus.APPROVED: "approved",
-            ApplicationStatus.REQUEST_CHANGES: "changes_requested",
-            ApplicationStatus.REJECTED: "rejected",
-        }[saved_status]
-        return Response(
-            envelope(
-                {
-                    "id": application.application_id,
-                    "status": response_status,
-                    "reviewed_at": application.updated_at,
-                },
-                "Application decision saved",
-            )
-        )
 
 
 class AdminMerchantListView(APIView):

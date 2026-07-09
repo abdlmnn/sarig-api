@@ -1,31 +1,23 @@
-from datetime import timedelta
 import logging
 
 from django.conf import settings
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
-from django.db.models import Avg, Count, Sum
-from django.db.models.functions import TruncDate
-from django.shortcuts import get_object_or_404
+from django.db.models import Avg
 from django.utils import timezone
 from rest_framework import permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
-from .dashboard import (
-    PH_TZ,
-    build_merchant_dashboard_overview,
-    store_availability_payload as dashboard_store_availability_payload,
-)
 from .models import Store, BusinessVertical
 from .serializers import StoreSerializer, BusinessVerticalSerializer, StoreStatusUpdateSerializer
 from .permissions import IsMerchantOrAdmin
+from .utils import PH_TZ, store_availability_payload
 
 logger = logging.getLogger(__name__)
 
@@ -101,61 +93,6 @@ class StoreViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only merchants can create stores.")
 
         serializer.save(owner=user)
-
-
-class MerchantAnalyticsView(APIView):
-    permission_classes = [IsMerchantOrAdmin]
-
-    def get(self, request, store_id):
-        store = get_object_or_404(Store, id=store_id)
-        
-        # Security Check
-        if not request.user.is_staff and store.owner != request.user:
-            raise PermissionDenied("You do not own this store.")
-
-        now = timezone.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        seven_days_ago = today_start - timedelta(days=7)
-
-        # 1. Financial Overview (Only Delivered orders count as Revenue)
-        delivered_orders = Order.objects.filter(store=store, status=OrderStatus.DELIVERED)
-        
-        total_revenue = delivered_orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-        total_orders = delivered_orders.count()
-        
-        today_revenue = delivered_orders.filter(created_at__gte=today_start).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-        today_orders = delivered_orders.filter(created_at__gte=today_start).count()
-
-        # 2. Top Selling Products
-        top_products = OrderItem.objects.filter(
-            order__store=store, 
-            order__status=OrderStatus.DELIVERED
-        ).values(
-            'product__name'
-        ).annotate(
-            total_sold=Sum('quantity')
-        ).order_by('-total_sold')[:5]
-
-        # 3. 7-Day Sales Trend
-        sales_trend = delivered_orders.filter(
-            created_at__gte=seven_days_ago
-        ).annotate(
-            date=TruncDate('created_at')
-        ).values('date').annotate(
-            daily_revenue=Sum('total_amount'),
-            daily_orders=Count('id')
-        ).order_by('date')
-
-        return Response({
-            "overview": {
-                "total_revenue": float(total_revenue),
-                "total_orders": total_orders,
-                "today_revenue": float(today_revenue),
-                "today_orders": today_orders,
-            },
-            "top_products": top_products,
-            "sales_trend": list(sales_trend)
-        })
 
 
 class NearbyStoresView(APIView):
@@ -241,10 +178,27 @@ class MerchantDashboardOverviewView(APIView):
     throttle_scope = "search"
 
     def get(self, request):
-        payload = build_merchant_dashboard_overview(request)
-        if payload is None:
+        stores = list(request.user.stores.select_related("vertical").filter(is_active=True).order_by("name"))
+        if not stores:
             return Response({"detail": "No active store found for this merchant."}, status=404)
-        return Response(payload)
+
+        primary_store = stores[0]
+        availability = store_availability_payload(primary_store, timezone.now().astimezone(PH_TZ))
+        return Response(
+            {
+                "merchant": {
+                    "id": str(request.user.id),
+                    "business_name": (
+                        primary_store.name
+                        if len(stores) == 1
+                        else f"{primary_store.name} + {len(stores) - 1} more"
+                    ),
+                    **availability,
+                    "service_modes": ["DELIVERY", "PICKUP"],
+                    "last_updated": max(store.updated_at for store in stores).astimezone(PH_TZ).isoformat(),
+                }
+            }
+        )
 
 
 class MerchantStoreStatusView(APIView):
@@ -263,7 +217,7 @@ class MerchantStoreStatusView(APIView):
         store.manual_override_reason = serializer.validated_data.get("reason", "")
         store.save(update_fields=["manual_override", "manual_override_reason", "updated_at"])
 
-        availability = dashboard_store_availability_payload(store, timezone.now().astimezone(PH_TZ))
+        availability = store_availability_payload(store, timezone.now().astimezone(PH_TZ))
         return Response(
             {
                 "store_id": str(store.id),

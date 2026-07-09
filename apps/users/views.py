@@ -1,6 +1,5 @@
 from .serializers import (
-    AdminLoginSerializer,
-    MerchantLoginSerializer,
+    LoginSerializer,
     UserSerializer,
     ProfileSerializer,
     AddressSerializer,
@@ -114,12 +113,8 @@ class ScopedLoginView(APIView):
         return errors
 
 
-class AdminLoginView(ScopedLoginView):
-    serializer_class = AdminLoginSerializer
-
-
-class MerchantLoginView(ScopedLoginView):
-    serializer_class = MerchantLoginSerializer
+class LoginView(ScopedLoginView):
+    serializer_class = LoginSerializer
 
 
 class LogoutView(APIView):

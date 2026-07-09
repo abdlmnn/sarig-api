@@ -67,10 +67,10 @@ class BusinessVerticalRuleTests(TestCase):
         product = serializer.save()
         self.assertTrue(product.requires_prescription)
 
-    def test_business_verticals_alias_is_public(self):
+    def test_business_verticals_endpoint_is_public(self):
         client = APIClient()
 
-        response = client.get("/api/v1/vendors/business-verticals/")
+        response = client.get("/api/v1/merchant/business-verticals/")
 
         self.assertEqual(response.status_code, 200)
         items = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
