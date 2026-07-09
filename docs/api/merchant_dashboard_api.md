@@ -1,9 +1,8 @@
 # Merchant Dashboard API
 
-Base URL:
-`/api/v1/merchant/dashboard/`
+The frontend dashboard composes merchant store state and order metrics from separate app-owned APIs.
 
-## Overview
+## Merchant Store Overview
 
 `GET /api/v1/merchant/dashboard/overview/`
 
@@ -11,7 +10,23 @@ Auth:
 `Merchant bearer token required`
 
 Purpose:
-Return one payload for the merchant dashboard overview page. The merchant is inferred from the authenticated user; frontend must not send merchant or store IDs.
+Return merchant/store availability only. The merchant is inferred from the authenticated user; frontend must not send merchant or store IDs.
+
+Response sections:
+
+```text
+merchant
+```
+
+## Store Order Activity
+
+`GET /api/v1/orders/store-activity/`
+
+Auth:
+`Merchant bearer token required`
+
+Purpose:
+Return order activity for the authenticated user's active stores.
 
 Optional query params:
 
@@ -29,7 +44,6 @@ Current behavior:
 Response sections:
 
 ```text
-merchant
 stats
 order_pipeline
 active_orders
@@ -73,13 +87,6 @@ Example:
 
 ```json
 {
-  "merchant": {
-    "id": "merchant_uuid",
-    "business_name": "Sari Sari Restaurant",
-    "status": "OPEN",
-    "service_modes": ["DELIVERY", "PICKUP"],
-    "last_updated": "2026-07-02T10:42:00+08:00"
-  },
   "stats": {
     "orders_today": {
       "value": 4,
