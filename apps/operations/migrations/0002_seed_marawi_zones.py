@@ -14,6 +14,7 @@ def seed_marawi_zones(apps, schema_editor):
                 "province": "Lanao del Sur",
                 "center_latitude": zone["center_latitude"],
                 "center_longitude": zone["center_longitude"],
+                "boundary": zone["boundary"],
                 "barangay_names": zone["barangay_names"],
                 "priority": zone["priority"],
                 "is_active": True,
