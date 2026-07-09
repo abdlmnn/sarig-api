@@ -4,11 +4,11 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
+from apps.email_templates.services import send_templated_email
 from apps.riders.models import RiderProfile
 from apps.users.models import Role
 from apps.vendors.models import BusinessVertical, Store
@@ -53,6 +53,21 @@ def applicant_email(application):
     return application.company_email if isinstance(application, MerchantApplication) else application.email
 
 
+def applicant_name(application):
+    return application.applicant_name or applicant_email(application)
+
+
+def email_context(application, **extra):
+    context = {
+        "application_id": application.application_id,
+        "application_type": application_type(application),
+        "application_type_label": application_type(application).lower(),
+        "applicant_name": applicant_name(application),
+    }
+    context.update(extra)
+    return context
+
+
 def record_history(application, to_status, actor=None, remarks=""):
     ApplicationStatusHistory.objects.create(
         application_id=application.application_id,
@@ -64,35 +79,19 @@ def record_history(application, to_status, actor=None, remarks=""):
     )
 
 
-def send_onboarding_email(subject, message, recipient):
-    if not recipient:
-        return False
-    try:
-        return send_mail(
-            subject,
-            message,
-            getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@sarig.local"),
-            [recipient],
-            fail_silently=True,
-        ) > 0
-    except Exception:
-        return False
-
-
 class ApplicationService:
     @staticmethod
     def send_submission_confirmation(application):
         app_type = application_type(application).lower()
         status_url = f"{FRONTEND_BASE_URL}/{app_type}/status"
-        return send_onboarding_email(
-            "Sarig application received",
-            (
-                f"Your {app_type} application was submitted.\n"
-                f"Application ID: {application.application_id}\n"
-                f"Status check: {status_url}\n"
-                f"Submitted: {application.created_at:%Y-%m-%d %H:%M}"
-            ),
+        return send_templated_email(
+            "onboarding.submitted",
             applicant_email(application),
+            email_context(
+                application,
+                status_url=status_url,
+                submitted_at=application.created_at.strftime("%Y-%m-%d %H:%M"),
+            ),
         )
 
     @staticmethod
@@ -126,10 +125,10 @@ class ApplicationService:
             ApplicationService.assign_role(application.applicant, "Merchant")
 
         setup_url = f"{FRONTEND_BASE_URL}/accounts/setup/{setup_token.token}"
-        send_onboarding_email(
-            "Sarig merchant application approved",
-            f"Your merchant application was approved. Set up your account here: {setup_url}",
+        send_templated_email(
+            "onboarding.approved.merchant",
             applicant_email(application),
+            email_context(application, setup_url=setup_url),
         )
         return store or setup_token
 
@@ -152,10 +151,10 @@ class ApplicationService:
             )
 
         setup_url = f"{FRONTEND_BASE_URL}/accounts/setup/{setup_token.token}"
-        send_onboarding_email(
-            "Sarig rider application approved",
-            f"Your rider application was approved. Set up your account here: {setup_url}",
+        send_templated_email(
+            "onboarding.approved.rider",
             applicant_email(application),
+            email_context(application, setup_url=setup_url),
         )
         return setup_token
 
@@ -212,10 +211,10 @@ class ApplicationService:
         application.status = ApplicationStatus.REJECTED
         application.admin_remarks = remarks
         application.save(update_fields=["status", "admin_remarks", "updated_at"])
-        send_onboarding_email(
-            "Sarig application rejected",
-            f"Your application {application.application_id} was rejected.\n\nReason: {remarks}",
+        send_templated_email(
+            "onboarding.rejected",
             applicant_email(application),
+            email_context(application, remarks=remarks),
         )
 
     @staticmethod
@@ -230,10 +229,15 @@ class ApplicationService:
         edit_token = ApplicationService.create_edit_token(application, requested_fields)
         app_type = application_type(application).lower()
         edit_url = f"{FRONTEND_BASE_URL}/{app_type}/application/edit/{edit_token.token}"
-        send_onboarding_email(
-            "Sarig application changes requested",
-            f"Please update your application {application.application_id}: {remarks}\n\nEdit link: {edit_url}",
+        send_templated_email(
+            "onboarding.request_changes",
             applicant_email(application),
+            email_context(
+                application,
+                edit_url=edit_url,
+                remarks=remarks,
+                requested_fields=", ".join(requested_fields) if requested_fields else "None",
+            ),
         )
         return edit_token
 
@@ -269,5 +273,9 @@ class ApplicationService:
             )
 
         setup_token.mark_used()
-        send_onboarding_email("Sarig account setup completed", "Your Sarig account setup is complete.", email)
+        send_templated_email(
+            "onboarding.account_setup_completed",
+            email,
+            email_context(application),
+        )
         return user
