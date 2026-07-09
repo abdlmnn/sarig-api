@@ -13,7 +13,7 @@ Base URL:
 - **Use**: legacy/general login when the frontend does not need role-specific routing.
 
 ### Admin Login
-`POST /api/v1/auth/admin/login/`
+`POST /api/v1/auth/login/`
 
 Use this for the superadmin dashboard only.
 
@@ -53,7 +53,7 @@ Response:
 ```
 
 ### Merchant Login
-`POST /api/v1/auth/merchant/login/`
+`POST /api/v1/auth/login/`
 
 Use this for approved merchant dashboard access.
 

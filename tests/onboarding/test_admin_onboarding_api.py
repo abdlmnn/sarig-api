@@ -71,7 +71,7 @@ class AdminOnboardingApiTests(TestCase):
         )
 
     def test_application_list_includes_frontend_fields_and_totals(self):
-        response = self.client.get("/api/v1/admin/onboarding/applications/?type=all&status=all&page=1&page_size=20")
+        response = self.client.get("/api/v1/onboarding/applications/?type=all&status=all&page=1&page_size=20")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 2)
@@ -87,7 +87,7 @@ class AdminOnboardingApiTests(TestCase):
         self.assertEqual(item["city"], "Marawi City")
 
     def test_merchant_detail_is_flat_and_includes_documents(self):
-        response = self.client.get(f"/api/v1/admin/onboarding/applications/{self.merchant.application_id}/")
+        response = self.client.get(f"/api/v1/onboarding/applications/{self.merchant.application_id}/")
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("data", response.data)
@@ -102,11 +102,11 @@ class AdminOnboardingApiTests(TestCase):
         self.assertTrue(document["required"])
         self.assertEqual(
             document["view_url"],
-            f"/api/v1/admin/onboarding/applications/{self.merchant.application_id}/documents/dti_sec_certificate/",
+            f"/api/v1/onboarding/applications/{self.merchant.application_id}/documents/dti_sec_certificate/",
         )
 
     def test_rider_detail_is_flat_and_includes_documents(self):
-        response = self.client.get(f"/api/v1/admin/onboarding/applications/{self.rider.application_id}/")
+        response = self.client.get(f"/api/v1/onboarding/applications/{self.rider.application_id}/")
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("data", response.data)
@@ -120,7 +120,7 @@ class AdminOnboardingApiTests(TestCase):
 
     def test_pdf_document_endpoint_returns_pdf_content_type(self):
         response = self.client.get(
-            f"/api/v1/admin/onboarding/applications/{self.merchant.application_id}/documents/dti_sec_certificate/"
+            f"/api/v1/onboarding/applications/{self.merchant.application_id}/documents/dti_sec_certificate/"
         )
 
         self.assertEqual(response.status_code, 200)
@@ -129,14 +129,14 @@ class AdminOnboardingApiTests(TestCase):
         self.assertIn(".pdf", response["Content-Disposition"])
 
     def test_actions_return_frontend_messages(self):
-        approve_response = self.client.post(f"/api/v1/admin/onboarding/applications/{self.merchant.application_id}/approve/")
+        approve_response = self.client.post(f"/api/v1/onboarding/applications/{self.merchant.application_id}/approve/")
         changes_response = self.client.post(
-            f"/api/v1/admin/onboarding/applications/{self.rider.application_id}/request-changes/",
+            f"/api/v1/onboarding/applications/{self.rider.application_id}/request-changes/",
             {"admin_remarks": "Please upload clearer documents.", "requested_fields": ["nbi_clearance"]},
             format="json",
         )
         reject_response = self.client.post(
-            f"/api/v1/admin/onboarding/applications/{self.rider.application_id}/reject/",
+            f"/api/v1/onboarding/applications/{self.rider.application_id}/reject/",
             {"admin_remarks": "Documents could not be verified."},
             format="json",
         )

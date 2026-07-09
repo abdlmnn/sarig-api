@@ -17,21 +17,23 @@ Content-Type: application/json
 ###
 
 ### Admin Login (username or email)
-POST http://127.0.0.1:8000/api/v1/auth/admin/login/
+POST http://127.0.0.1:8000/api/v1/auth/login/
 Content-Type: application/json
 
 {
   "identifier": "{{admin_identifier}}",
-  "password": "{{admin_password}}"
+  "password": "{{admin_password}}",
+  "account_type": "ADMIN"
 }
 
 ###
 
 ### Merchant Login (username or email)
-POST http://127.0.0.1:8000/api/v1/auth/merchant/login/
+POST http://127.0.0.1:8000/api/v1/auth/login/
 Content-Type: application/json
 
 {
   "identifier": "{{merchant_identifier}}",
-  "password": "{{merchant_password}}"
+  "password": "{{merchant_password}}",
+  "account_type": "MERCHANT"
 }

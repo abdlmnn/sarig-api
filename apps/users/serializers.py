@@ -97,13 +97,17 @@ class RoleAwareLoginSerializer(serializers.Serializer):
         else:
             refresh.set_exp(lifetime=timedelta(hours=12))
 
+        account_type = self.get_required_scope(attrs, authenticated_user)
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "user": UserSerializer(authenticated_user).data,
-            "account_type": self.required_scope,
+            "account_type": account_type,
             "remember_me": attrs.get("remember_me", False),
         }
+
+    def get_required_scope(self, attrs, user):
+        return self.required_scope
 
     def get_user_by_identifier(self, identifier):
         if "@" in identifier:
@@ -126,12 +130,35 @@ class RoleAwareLoginSerializer(serializers.Serializer):
         )
 
 
-class AdminLoginSerializer(RoleAwareLoginSerializer):
-    required_scope = "ADMIN"
+class LoginSerializer(RoleAwareLoginSerializer):
+    account_type = serializers.ChoiceField(
+        choices=("ADMIN", "MERCHANT", "CUSTOMER", "RIDER"),
+        required=False,
+    )
 
+    def get_required_scope(self, attrs, user):
+        account_type = attrs.get("account_type")
+        if account_type:
+            return account_type
+        if user.is_superuser:
+            return "ADMIN"
+        if user.is_merchant:
+            return "MERCHANT"
+        if user.is_rider:
+            return "RIDER"
+        return "CUSTOMER"
 
-class MerchantLoginSerializer(RoleAwareLoginSerializer):
-    required_scope = "MERCHANT"
+    def is_allowed(self, user):
+        account_type = self.initial_data.get("account_type")
+        if account_type == "ADMIN":
+            return bool(user.is_superuser)
+        if account_type == "MERCHANT":
+            return bool(user.is_merchant and not user.is_superuser)
+        if account_type == "RIDER":
+            return bool(user.is_rider and not user.is_superuser)
+        if account_type == "CUSTOMER":
+            return bool(user.is_customer and not user.is_superuser)
+        return True
 
 
 class ProfileSerializer(serializers.ModelSerializer):

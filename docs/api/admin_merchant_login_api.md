@@ -13,7 +13,7 @@ Both login endpoints accept either username or email through the same field:
 Use this endpoint for the superadmin dashboard sign-in page.
 
 Endpoint:
-`POST /api/v1/auth/admin/login/`
+`POST /api/v1/auth/login/`
 
 Auth:
 not required
@@ -73,7 +73,7 @@ Frontend routing after success:
 Use this endpoint for the approved merchant sign-in page.
 
 Endpoint:
-`POST /api/v1/auth/merchant/login/`
+`POST /api/v1/auth/login/`
 
 Auth:
 not required
@@ -193,8 +193,8 @@ Example:
 The backend intentionally returns the same error for an unknown account and a wrong password. The frontend should display `message` directly.
 
 Wrong role examples:
-- merchant account using `/api/v1/auth/admin/login/`
-- superadmin account using `/api/v1/auth/merchant/login/`
+- merchant account using `/api/v1/auth/login/`
+- superadmin account using `/api/v1/auth/login/`
 
 Response:
 

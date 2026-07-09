@@ -70,7 +70,7 @@ Important rules:
 
 Business categories:
 
-`GET /api/v1/vendors/business-verticals/`
+`GET /api/v1/merchant/business-verticals/`
 
 Returns an array:
 
@@ -283,11 +283,11 @@ After approval, the frontend receives an account setup link by email.
 
 ### Validate Account Setup Token
 
-`GET /api/v1/accounts/setup/{token}/`
+`GET /api/v1/onboarding/accounts/setup/{token}/`
 
 ### Create Credentials
 
-`POST /api/v1/accounts/setup/{token}/`
+`POST /api/v1/onboarding/accounts/setup/{token}/`
 
 Request body:
 
@@ -309,7 +309,7 @@ These endpoints are for the admin onboarding desk only.
 
 ### List Applications
 
-`GET /api/v1/admin/onboarding/applications/`
+`GET /api/v1/onboarding/applications/`
 
 Query params:
 
@@ -353,7 +353,7 @@ Response:
 
 ### Application Detail
 
-`GET /api/v1/admin/onboarding/applications/{application_id}/`
+`GET /api/v1/onboarding/applications/{application_id}/`
 
 Merchant response is flat:
 
@@ -391,7 +391,7 @@ Merchant response is flat:
       "file_type": "application/pdf",
       "file_size": "0.8 MB",
       "required": true,
-      "view_url": "/api/v1/admin/onboarding/applications/MR-1028/documents/dti_sec_certificate/"
+      "view_url": "/api/v1/onboarding/applications/MR-1028/documents/dti_sec_certificate/"
     }
   ],
   "status_history": []
@@ -435,13 +435,13 @@ Document keys:
 
 ### View Document
 
-`GET /api/v1/admin/onboarding/applications/{application_id}/documents/{document_key}/`
+`GET /api/v1/onboarding/applications/{application_id}/documents/{document_key}/`
 
 Returns the file directly. Use `?download=1` to force download or `?metadata=1` to return document metadata JSON.
 
 ### Approve Application
 
-`POST /api/v1/admin/onboarding/applications/{application_id}/approve/`
+`POST /api/v1/onboarding/applications/{application_id}/approve/`
 
 Response:
 
@@ -456,7 +456,7 @@ Response:
 
 ### Request Changes
 
-`POST /api/v1/admin/onboarding/applications/{application_id}/request-changes/`
+`POST /api/v1/onboarding/applications/{application_id}/request-changes/`
 
 Request body:
 
@@ -480,7 +480,7 @@ Response:
 
 ### Reject Application
 
-`POST /api/v1/admin/onboarding/applications/{application_id}/reject/`
+`POST /api/v1/onboarding/applications/{application_id}/reject/`
 
 Request body:
 

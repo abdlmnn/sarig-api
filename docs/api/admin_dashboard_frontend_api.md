@@ -11,7 +11,7 @@ Use this as the source of truth for:
 
 All endpoints are under:
 
-`/api/v1/admin`
+`/api/v1/operations`
 
 All admin endpoints require admin authentication.
 
@@ -75,7 +75,7 @@ Recommended client behavior:
 
 ## 1. Admin Dashboard
 
-### `GET /api/v1/admin/dashboard`
+### `GET /api/v1/operations/dashboard`
 
 Use this for the dashboard homepage.
 
@@ -88,7 +88,7 @@ Query params:
 Request example:
 
 ```http
-GET /api/v1/admin/dashboard?date_from=2026-06-01&date_to=2026-06-23
+GET /api/v1/operations/dashboard?date_from=2026-06-01&date_to=2026-06-23
 ```
 
 Response fields:
@@ -140,7 +140,7 @@ Zone item fields in the dashboard:
 
 ## 2. Marawi Service Zones
 
-### `GET /api/v1/admin/service-zones/`
+### `GET /api/v1/operations/service-zones/`
 
 Use this for the Marawi map and zone list.
 
@@ -153,7 +153,7 @@ Query params:
 Request example:
 
 ```http
-GET /api/v1/admin/service-zones/?city=Marawi&status=WATCH
+GET /api/v1/operations/service-zones/?city=Marawi&status=WATCH
 ```
 
 Response fields:
@@ -204,7 +204,7 @@ Frontend usage:
 
 ---
 
-### `GET /api/v1/admin/service-zones/{zone_id}/`
+### `GET /api/v1/operations/service-zones/{zone_id}/`
 
 Use this when the admin clicks a zone.
 
@@ -239,7 +239,7 @@ Recommended UI use:
 
 ---
 
-### `GET /api/v1/admin/service-zones/{zone_id}/merchants/`
+### `GET /api/v1/operations/service-zones/{zone_id}/merchants/`
 
 Use this to populate the zone merchant list.
 
@@ -269,7 +269,7 @@ Merchant item fields:
 
 ---
 
-### `GET /api/v1/admin/service-zones/{zone_id}/riders/`
+### `GET /api/v1/operations/service-zones/{zone_id}/riders/`
 
 Use this to populate the zone rider list.
 
@@ -304,7 +304,7 @@ Allowed rider `status` values:
 
 ---
 
-### `GET /api/v1/admin/service-zones/{zone_id}/activity/`
+### `GET /api/v1/operations/service-zones/{zone_id}/activity/`
 
 Use this for the zone activity timeline panel.
 
@@ -325,32 +325,36 @@ Event item fields:
 
 ## 3. Onboarding
 
-### `GET /api/v1/admin/onboarding/summary`
+### `GET /api/v1/onboarding/applications/`
 
-Use this for the onboarding summary cards.
+Use this for the onboarding table and summary cards. The list response includes `totals`.
 
-Response fields:
+Totals fields:
 
 - `merchants`
 - `riders`
 - `ready`
-- `changes_requested`
-- `approved_today`
-- `rejected_today`
+- `changes`
+- `request_changes`
 
-### `POST /api/v1/admin/onboarding/applications/{application_id}/decision`
+### `POST /api/v1/onboarding/applications/{application_id}/approve/`
 
-Use this for approve, request changes, or reject actions.
+Use this to approve an application.
 
-Request body:
+### `POST /api/v1/onboarding/applications/{application_id}/request-changes/`
+
+Use this to request applicant changes.
 
 ```json
 {
-  "decision": "approved",
-  "admin_notes": "Looks good.",
-  "change_requests": []
+  "admin_remarks": "Please upload clearer documents.",
+  "requested_fields": ["nbi_clearance"]
 }
 ```
+
+### `POST /api/v1/onboarding/applications/{application_id}/reject/`
+
+Use this to reject an application.
 
 Allowed `decision` values:
 
@@ -389,7 +393,7 @@ Returned `status` values:
 
 ## 4. Merchants
 
-### `GET /api/v1/admin/merchants`
+### `GET /api/v1/operations/merchants`
 
 Use this for the merchant admin table.
 
@@ -430,7 +434,7 @@ Allowed `status` values:
 
 ## 5. Riders
 
-### `GET /api/v1/admin/riders`
+### `GET /api/v1/operations/riders`
 
 Use this for the rider admin table.
 
@@ -465,7 +469,7 @@ Rider item fields:
 
 ## 6. Finance
 
-### `GET /api/v1/admin/finance/overview`
+### `GET /api/v1/operations/finance/overview`
 
 Use this for finance summary cards.
 
@@ -489,7 +493,7 @@ Response fields:
 
 ## 7. Marketing
 
-### `GET /api/v1/admin/marketing/overview`
+### `GET /api/v1/operations/marketing/overview`
 
 Use this for the marketing summary area.
 
@@ -510,7 +514,7 @@ Response fields:
 
 ## 8. Alerts
 
-### `GET /api/v1/admin/system/alerts`
+### `GET /api/v1/operations/system/alerts`
 
 Use this for the system watch panel.
 
@@ -537,7 +541,7 @@ Allowed `severity` values:
 - `warning`
 - `critical`
 
-### `PATCH /api/v1/admin/system/alerts/{alert_id}/resolve`
+### `PATCH /api/v1/operations/system/alerts/{alert_id}/resolve`
 
 Use this to resolve an alert.
 
@@ -559,7 +563,7 @@ Response fields:
 - Use `service-zones` for the Marawi map and operations panel.
 - Use the zone detail endpoint when the user clicks a zone.
 - Use `merchants` and `riders` for admin tables and filters.
-- Use `onboarding/summary` and `onboarding/applications/{id}/decision` for review actions.
+- Use `onboarding/applications/` for review lists and totals, then use the dedicated approve, request-changes, and reject endpoints for actions.
 - Do not hardcode zone names in the frontend if the API already provides them.
 - Treat `load_status` as the visual source of truth.
 - Treat `center_latitude` and `center_longitude` as the fallback map placement when no boundary exists.
@@ -573,4 +577,3 @@ Response fields:
 - `zone_id` is a UUID string.
 - The dashboard endpoint already returns enough data for the first screen.
 - The zone detail endpoint should be used for drill-down, not for initial page load.
-

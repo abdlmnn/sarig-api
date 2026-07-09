@@ -51,14 +51,7 @@ class MerchantDashboardOverviewTests(TestCase):
         OrderItem.objects.create(order=order, product=self.product, quantity=1, unit_price=self.product.price)
         return order
 
-    def test_merchant_dashboard_overview_returns_single_payload(self):
-        self.create_order(OrderStatus.PENDING, "150.00")
-        self.create_order(OrderStatus.PREPARING, "200.00")
-        self.create_order(OrderStatus.READY, "300.00", "MSU Main, Marawi City")
-        delivered = self.create_order(OrderStatus.DELIVERED, "400.00")
-        delivered.delivered_at = timezone.now()
-        delivered.save(update_fields=["delivered_at"])
-
+    def test_merchant_dashboard_overview_returns_store_payload(self):
         self.client.force_authenticate(self.merchant)
         response = self.client.get("/api/v1/merchant/dashboard/overview/")
 
@@ -69,6 +62,19 @@ class MerchantDashboardOverviewTests(TestCase):
         self.assertIn("status_reason", response.data["merchant"])
         self.assertIn("manual_override", response.data["merchant"])
         self.assertIn("next_status_change", response.data["merchant"])
+
+    def test_merchant_order_dashboard_overview_returns_order_payload(self):
+        self.create_order(OrderStatus.PENDING, "150.00")
+        self.create_order(OrderStatus.PREPARING, "200.00")
+        self.create_order(OrderStatus.READY, "300.00", "MSU Main, Marawi City")
+        delivered = self.create_order(OrderStatus.DELIVERED, "400.00")
+        delivered.delivered_at = timezone.now()
+        delivered.save(update_fields=["delivered_at"])
+
+        self.client.force_authenticate(self.merchant)
+        response = self.client.get("/api/v1/orders/store-activity/")
+
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["stats"]["orders_today"]["value"], 4)
         self.assertEqual(response.data["stats"]["preparing_now"]["value"], 1)
         self.assertEqual(response.data["order_pipeline"]["new"], 1)
@@ -83,7 +89,7 @@ class MerchantDashboardOverviewTests(TestCase):
     def test_merchant_dashboard_requires_merchant_role(self):
         self.client.force_authenticate(self.customer)
 
-        response = self.client.get("/api/v1/merchant/dashboard/overview/")
+        response = self.client.get("/api/v1/orders/store-activity/")
 
         self.assertEqual(response.status_code, 403)
 

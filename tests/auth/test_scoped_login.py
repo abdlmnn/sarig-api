@@ -23,8 +23,8 @@ class ScopedLoginTests(TestCase):
 
     def test_admin_can_login_with_email(self):
         response = self.client.post(
-            "/api/v1/auth/admin/login/",
-            {"identifier": "admin@sarig.local", "password": "admin12345"},
+            "/api/v1/auth/login/",
+            {"identifier": "admin@sarig.local", "password": "admin12345", "account_type": "ADMIN"},
             format="json",
         )
 
@@ -35,8 +35,8 @@ class ScopedLoginTests(TestCase):
 
     def test_merchant_can_login_with_username(self):
         response = self.client.post(
-            "/api/v1/auth/merchant/login/",
-            {"identifier": "merchant1", "password": "merchant12345"},
+            "/api/v1/auth/login/",
+            {"identifier": "merchant1", "password": "merchant12345", "account_type": "MERCHANT"},
             format="json",
         )
 
@@ -44,20 +44,20 @@ class ScopedLoginTests(TestCase):
         self.assertEqual(response.data["account_type"], "MERCHANT")
         self.assertTrue(response.data["user"]["is_merchant"])
 
-    def test_merchant_cannot_use_admin_login(self):
+    def test_merchant_cannot_use_admin_scope(self):
         response = self.client.post(
-            "/api/v1/auth/admin/login/",
-            {"identifier": "merchant1@sarig.local", "password": "merchant12345"},
+            "/api/v1/auth/login/",
+            {"identifier": "merchant1@sarig.local", "password": "merchant12345", "account_type": "ADMIN"},
             format="json",
         )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["code"], "forbidden")
 
-    def test_admin_cannot_use_merchant_login(self):
+    def test_admin_cannot_use_merchant_scope(self):
         response = self.client.post(
-            "/api/v1/auth/merchant/login/",
-            {"identifier": "superadmin", "password": "admin12345"},
+            "/api/v1/auth/login/",
+            {"identifier": "superadmin", "password": "admin12345", "account_type": "MERCHANT"},
             format="json",
         )
 
@@ -66,8 +66,8 @@ class ScopedLoginTests(TestCase):
 
     def test_unknown_identifier_returns_frontend_friendly_error(self):
         response = self.client.post(
-            "/api/v1/auth/admin/login/",
-            {"identifier": "missing@sarig.local", "password": "admin12345"},
+            "/api/v1/auth/login/",
+            {"identifier": "missing@sarig.local", "password": "admin12345", "account_type": "ADMIN"},
             format="json",
         )
 
@@ -77,8 +77,8 @@ class ScopedLoginTests(TestCase):
 
     def test_wrong_password_returns_same_error_as_unknown_identifier(self):
         response = self.client.post(
-            "/api/v1/auth/admin/login/",
-            {"identifier": "admin@sarig.local", "password": "wrong-password"},
+            "/api/v1/auth/login/",
+            {"identifier": "admin@sarig.local", "password": "wrong-password", "account_type": "ADMIN"},
             format="json",
         )
 

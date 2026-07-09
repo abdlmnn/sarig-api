@@ -1,8 +1,8 @@
 ### List all stores
-GET http://127.0.0.1:8000/api/v1/vendors/stores/
+GET http://127.0.0.1:8000/api/v1/merchant/stores/
 Content-Type: application/json
 
 ### Get specific store details
 # Replace {{store_id}} with a real UUID
-GET http://127.0.0.1:8000/api/v1/vendors/stores/{{store_id}}/
+GET http://127.0.0.1:8000/api/v1/merchant/stores/{{store_id}}/
 Content-Type: application/json

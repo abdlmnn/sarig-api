@@ -88,7 +88,7 @@ def document_meta(application):
 
 
 def document_view_url(application, key):
-    return f"/api/v1/admin/onboarding/applications/{application.application_id}/documents/{key}/"
+    return f"/api/v1/onboarding/applications/{application.application_id}/documents/{key}/"
 
 
 def document_payload(application, key):

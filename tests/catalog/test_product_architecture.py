@@ -1,10 +1,11 @@
 from decimal import Decimal
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from apps.catalog.models import Category, InventoryMode, Product, ProductType
 from apps.catalog.serializers import ProductSerializer
-from apps.users.models import User
+from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store
 
 
@@ -95,3 +96,48 @@ class ProductArchitectureTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("stock_quantity", serializer.errors)
+
+
+class CatalogProductManagementRouteTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.merchant = User.objects.create_user(username="merchant", email="merchant@example.com", password="password123")
+        merchant_role, _ = Role.objects.get_or_create(name="Merchant")
+        self.merchant.roles.add(merchant_role)
+        self.customer = User.objects.create_user(username="customer", email="customer@example.com", password="password123")
+        vertical, _ = BusinessVertical.objects.update_or_create(
+            slug="restaurant",
+            defaults={"name": "Restaurant", "allowed_product_types": ["food"]},
+        )
+        self.store = Store.objects.create(
+            owner=self.merchant,
+            vertical=vertical,
+            name="Sarig Restaurant",
+            latitude="8.003400",
+            longitude="124.283900",
+            street_address="Banggolo",
+            city="Marawi City",
+        )
+        self.category = Category.objects.create(store=self.store, name="Meals", slug="meals")
+        Product.objects.create(category=self.category, name="Chicken Pastil", price=Decimal("65.00"))
+
+    def test_public_catalog_products_route_remains_read_only_browsing(self):
+        response = self.client.get("/api/v1/catalog/products/")
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_catalog_product_management_route_requires_merchant(self):
+        self.client.force_authenticate(self.customer)
+
+        response = self.client.get("/api/v1/catalog/products/manage/")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_catalog_product_management_route_returns_merchant_products(self):
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get("/api/v1/catalog/products/manage/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["total_products"], 1)
+        self.assertEqual(response.data["products"][0]["name"], "Chicken Pastil")
