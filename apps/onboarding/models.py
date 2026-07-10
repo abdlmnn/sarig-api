@@ -1,4 +1,5 @@
 import uuid
+from secrets import token_urlsafe
 
 from django.conf import settings
 from django.db import models
@@ -37,16 +38,21 @@ class VehicleType(models.TextChoices):
     CAR = "CAR", "Car"
 
 
+APPLICATION_ID_MAX_LENGTH = 40
+APPLICATION_ID_RANDOM_BYTES = 12
+
+
 def generate_application_id(prefix, model):
     while True:
-        candidate = f"{prefix}-{uuid.uuid4().int % 9000 + 1000}"
+        token = token_urlsafe(APPLICATION_ID_RANDOM_BYTES).replace("-", "").replace("_", "").upper()
+        candidate = f"{prefix}-{token[:16]}"
         if not model.objects.filter(application_id=candidate).exists():
             return candidate
 
 
 class MerchantApplication(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    application_id = models.CharField(max_length=20, unique=True, db_index=True, blank=True)
+    application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, unique=True, db_index=True, blank=True)
     applicant = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -112,7 +118,7 @@ class MerchantApplication(models.Model):
 
 class RiderApplication(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    application_id = models.CharField(max_length=20, unique=True, db_index=True, blank=True)
+    application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, unique=True, db_index=True, blank=True)
     applicant = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -168,7 +174,7 @@ class RiderApplication(models.Model):
 
 class ApplicationStatusHistory(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    application_id = models.CharField(max_length=20, db_index=True)
+    application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, db_index=True)
     application_type = models.CharField(max_length=20)
     from_status = models.CharField(max_length=20, blank=True)
     to_status = models.CharField(max_length=20)
@@ -183,7 +189,7 @@ class ApplicationStatusHistory(models.Model):
 class ApplicationEditToken(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, editable=False)
-    application_id = models.CharField(max_length=20, db_index=True)
+    application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, db_index=True)
     application_type = models.CharField(max_length=20)
     requested_fields = models.JSONField(default=list, blank=True)
     expires_at = models.DateTimeField()
@@ -202,7 +208,7 @@ class ApplicationEditToken(models.Model):
 class AccountSetupToken(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, editable=False)
-    application_id = models.CharField(max_length=20, db_index=True)
+    application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, db_index=True)
     application_type = models.CharField(max_length=20)
     expires_at = models.DateTimeField()
     used_at = models.DateTimeField(null=True, blank=True)
