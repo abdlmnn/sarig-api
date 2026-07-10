@@ -179,6 +179,7 @@ REST_FRAMEWORK = {
         "auth": os.getenv("DRF_THROTTLE_AUTH", "10/min"),
         "registration": os.getenv("DRF_THROTTLE_REGISTRATION", "5/hour"),
         "onboarding": os.getenv("DRF_THROTTLE_ONBOARDING", "10/hour"),
+        "onboarding_status": os.getenv("DRF_THROTTLE_ONBOARDING_STATUS", "60/min"),
         "checkout": os.getenv("DRF_THROTTLE_CHECKOUT", "20/hour"),
         "payment_webhook": os.getenv("DRF_THROTTLE_PAYMENT_WEBHOOK", "120/min"),
         "search": os.getenv("DRF_THROTTLE_SEARCH", "60/min"),

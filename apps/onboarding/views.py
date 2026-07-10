@@ -386,7 +386,7 @@ class RiderApplicationCreateView(generics.CreateAPIView):
 
 class MerchantStatusCheckView(APIView):
     permission_classes = [permissions.AllowAny]
-    throttle_scope = "onboarding"
+    throttle_scope = "onboarding_status"
 
     def post(self, request):
         serializer = ApplicationIdSerializer(data=request.data)
@@ -397,7 +397,7 @@ class MerchantStatusCheckView(APIView):
 
 class RiderStatusCheckView(APIView):
     permission_classes = [permissions.AllowAny]
-    throttle_scope = "onboarding"
+    throttle_scope = "onboarding_status"
 
     def post(self, request):
         serializer = ApplicationIdSerializer(data=request.data)
