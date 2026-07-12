@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from django.db.models import Avg, Count, Max, Q
+from django.db.models import Avg, Count, F, Max, Q
 from django.utils.text import slugify
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -15,8 +15,8 @@ from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
 
-from .models import Category, MedicineReference, Product
-from .serializers import CategorySerializer, MedicineReferenceSerializer, ProductSerializer
+from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product
+from .serializers import CategorySerializer, CategoryTemplateSerializer, MedicineReferenceSerializer, ProductSerializer
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -65,6 +65,26 @@ class MedicineReferenceViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset[:50]
 
 
+class CategoryTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = CategoryTemplateSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = CategoryTemplate.objects.select_related("vertical").filter(is_active=True)
+        vertical = self.request.query_params.get("vertical", "").strip()
+        query = self.request.query_params.get("q", "").strip()
+
+        if vertical:
+            queryset = queryset.filter(vertical__slug=vertical)
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(slug__icontains=query)
+            )
+        return queryset.order_by("order", "name")[:50]
+
+
 def get_or_create_merchant_store(user):
     store = Store.objects.filter(owner=user, is_active=True).first()
     if store:
@@ -98,7 +118,7 @@ def product_stock_status(product):
         return "NOT_TRACKED"
     if not product.stock_quantity:
         return "OUT_OF_STOCK"
-    if product.stock_quantity <= 5:
+    if product.stock_quantity <= product.low_stock_threshold:
         return "LOW_STOCK"
     return "IN_STOCK"
 
@@ -117,12 +137,19 @@ def product_payload(product, request):
         "price": money_payload(product.price),
         "stock_quantity": product.stock_quantity if product.track_inventory else None,
         "track_inventory": product.track_inventory,
-        "low_stock_threshold": 5,
+        "low_stock_threshold": product.low_stock_threshold,
         "stock_status": stock_status,
         "availability_status": "AVAILABLE" if product.is_available and product.is_active else "UNAVAILABLE",
         "is_available": product.is_available,
         "image_url": request.build_absolute_uri(product.image.url) if product.image else "",
         "sku": product.sku or "",
+        "product_type": product.product_type,
+        "generic_name": product.generic_name,
+        "brand_name": product.brand_name,
+        "dosage": product.dosage,
+        "medicine_form": product.medicine_form,
+        "requires_prescription": product.requires_prescription,
+        "medicine_reference": str(product.medicine_reference_id) if product.medicine_reference_id else "",
         "preparation_time_minutes": product.preparation_time_minutes,
         "updated_at": product.updated_at.isoformat(),
     }
@@ -394,7 +421,7 @@ class ProductManagementListView(APIView):
             filtered_products = filtered_products.filter(
                 track_inventory=True,
                 stock_quantity__gt=0,
-                stock_quantity__lte=5,
+                stock_quantity__lte=F("low_stock_threshold"),
             )
         elif status_filter == "OUT_OF_STOCK":
             filtered_products = filtered_products.filter(
@@ -427,7 +454,7 @@ class ProductManagementListView(APIView):
                     "low_stock_products": all_products.filter(
                         track_inventory=True,
                         stock_quantity__gt=0,
-                        stock_quantity__lte=5,
+                        stock_quantity__lte=F("low_stock_threshold"),
                     ).count(),
                 },
                 "merchant": {
@@ -551,6 +578,67 @@ class ProductManagementDetailView(APIView):
 
         product.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProductInventoryUpdateView(APIView):
+    permission_classes = [IsMerchant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def patch(self, request, product_id):
+        store, product = store_product_or_none(request.user, product_id)
+        if not store:
+            return Response({"detail": "No active store found for this merchant."}, status=404)
+        if not product:
+            return Response({"detail": "Product not found."}, status=404)
+
+        track_inventory = request.data.get("track_inventory", product.track_inventory)
+        if isinstance(track_inventory, str):
+            track_inventory = track_inventory.lower() in {"true", "1", "yes", "on"}
+        else:
+            track_inventory = bool(track_inventory)
+
+        is_available = request.data.get("is_available", product.is_available)
+        if isinstance(is_available, str):
+            is_available = is_available.lower() in {"true", "1", "yes", "on"}
+        else:
+            is_available = bool(is_available)
+
+        data = {
+            "inventory_mode": InventoryMode.SIMPLE_STOCK if track_inventory else InventoryMode.NONE,
+            "track_inventory": track_inventory,
+            "is_available": is_available,
+        }
+
+        if track_inventory:
+            stock_quantity = request.data.get("stock_quantity")
+            if stock_quantity in (None, ""):
+                return Response({"stock_quantity": "Stock quantity is required."}, status=400)
+            try:
+                stock_quantity = int(stock_quantity)
+            except (TypeError, ValueError):
+                return Response({"stock_quantity": "Stock quantity must be a valid number."}, status=400)
+            if stock_quantity < 0:
+                return Response({"stock_quantity": "Stock quantity cannot be negative."}, status=400)
+            data["stock_quantity"] = stock_quantity
+
+            low_stock_threshold = request.data.get("low_stock_threshold", product.low_stock_threshold)
+            if low_stock_threshold in (None, ""):
+                low_stock_threshold = 5
+            try:
+                low_stock_threshold = int(low_stock_threshold)
+            except (TypeError, ValueError):
+                return Response({"low_stock_threshold": "Low stock threshold must be a valid number."}, status=400)
+            if low_stock_threshold < 0:
+                return Response({"low_stock_threshold": "Low stock threshold cannot be negative."}, status=400)
+            data["low_stock_threshold"] = low_stock_threshold
+        else:
+            data["stock_quantity"] = None
+
+        serializer = ProductSerializer(product, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.save()
+
+        return Response(product_payload(product, request))
 
 class GlobalProductSearchView(APIView):
     permission_classes = [permissions.AllowAny]
