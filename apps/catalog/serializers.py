@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.common.validators import validate_image_upload
-from .models import Category, InventoryMode, MedicineReference, Product, ProductType, ModifierGroup, ModifierItem
+from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductType, ModifierGroup, ModifierItem
 
 
 class ModifierItemSerializer(serializers.ModelSerializer):
@@ -43,6 +43,29 @@ class MedicineReferenceSerializer(serializers.ModelSerializer):
         ]
 
 
+class CategoryTemplateSerializer(serializers.ModelSerializer):
+    vertical = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CategoryTemplate
+        fields = [
+            "id",
+            "vertical",
+            "name",
+            "slug",
+            "description",
+            "order",
+            "is_active",
+        ]
+
+    def get_vertical(self, obj):
+        return {
+            "id": str(obj.vertical_id),
+            "name": obj.vertical.name,
+            "slug": obj.vertical.slug,
+        }
+
+
 class ProductSerializer(serializers.ModelSerializer):
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
     in_stock = serializers.ReadOnlyField()
@@ -73,6 +96,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "is_available",
             "track_inventory",
             "stock_quantity",
+            "low_stock_threshold",
             "in_stock",
             "is_active",
             "modifier_groups",
