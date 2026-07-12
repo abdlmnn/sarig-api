@@ -98,7 +98,7 @@ def product_stock_status(product):
         return "NOT_TRACKED"
     if not product.stock_quantity:
         return "OUT_OF_STOCK"
-    if product.stock_quantity <= 5:
+    if product.stock_quantity <= product.low_stock_threshold:
         return "LOW_STOCK"
     return "IN_STOCK"
 
@@ -117,12 +117,19 @@ def product_payload(product, request):
         "price": money_payload(product.price),
         "stock_quantity": product.stock_quantity if product.track_inventory else None,
         "track_inventory": product.track_inventory,
-        "low_stock_threshold": 5,
+        "low_stock_threshold": product.low_stock_threshold,
         "stock_status": stock_status,
         "availability_status": "AVAILABLE" if product.is_available and product.is_active else "UNAVAILABLE",
         "is_available": product.is_available,
         "image_url": request.build_absolute_uri(product.image.url) if product.image else "",
         "sku": product.sku or "",
+        "product_type": product.product_type,
+        "generic_name": product.generic_name or "",
+        "brand_name": product.brand_name or "",
+        "dosage": product.dosage or "",
+        "medicine_form": product.medicine_form or "",
+        "requires_prescription": product.requires_prescription,
+        "medicine_reference": str(product.medicine_reference_id) if product.medicine_reference_id else "",
         "preparation_time_minutes": product.preparation_time_minutes,
         "updated_at": product.updated_at.isoformat(),
     }

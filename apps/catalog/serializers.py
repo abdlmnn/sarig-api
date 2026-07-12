@@ -73,6 +73,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "is_available",
             "track_inventory",
             "stock_quantity",
+            "low_stock_threshold",
             "in_stock",
             "is_active",
             "modifier_groups",
@@ -94,6 +95,10 @@ class ProductSerializer(serializers.ModelSerializer):
         product_type = attrs.get("product_type", getattr(self.instance, "product_type", ProductType.GENERAL))
         inventory_mode = attrs.get("inventory_mode", getattr(self.instance, "inventory_mode", InventoryMode.NONE))
         stock_quantity = attrs.get("stock_quantity", getattr(self.instance, "stock_quantity", None))
+        low_stock_threshold = attrs.get(
+            "low_stock_threshold",
+            getattr(self.instance, "low_stock_threshold", 5),
+        )
         requires_prescription = attrs.get(
             "requires_prescription",
             getattr(self.instance, "requires_prescription", False),
@@ -123,6 +128,10 @@ class ProductSerializer(serializers.ModelSerializer):
         if inventory_mode == InventoryMode.SIMPLE_STOCK and stock_quantity is None:
             raise serializers.ValidationError(
                 {"stock_quantity": "Stock quantity is required when inventory_mode is simple_stock."}
+            )
+        if low_stock_threshold is None or low_stock_threshold < 0:
+            raise serializers.ValidationError(
+                {"low_stock_threshold": "Low stock threshold must be 0 or higher."}
             )
         if inventory_mode == InventoryMode.NONE:
             attrs["stock_quantity"] = None

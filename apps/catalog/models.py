@@ -81,6 +81,7 @@ class Product(models.Model):
     is_available = models.BooleanField(default=True)
     track_inventory = models.BooleanField(default=False)
     stock_quantity = models.PositiveIntegerField(default=None, blank=True, null=True)
+    low_stock_threshold = models.PositiveIntegerField(default=5)
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
