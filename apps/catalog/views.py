@@ -87,7 +87,7 @@ class CategoryTemplateViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ProductReferenceViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ProductReferenceSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = ProductReference.objects.select_related("vertical").filter(is_active=True)
