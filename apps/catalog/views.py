@@ -108,6 +108,63 @@ class ProductReferenceViewSet(viewsets.ReadOnlyModelViewSet):
             )
         return queryset.order_by("name", "brand_name")[:50]
 
+    def list(self, request, *args, **kwargs):
+        references = list(self.get_queryset())
+        if references:
+            return Response(self.get_serializer(references, many=True).data)
+
+        vertical = request.query_params.get("vertical", "").strip()
+        product_type = request.query_params.get("product_type", "").strip()
+        query = request.query_params.get("q", "").strip()
+        if not vertical or not product_type:
+            return Response([])
+
+        products = Product.objects.select_related(
+            "category__store__vertical"
+        ).filter(
+            is_active=True,
+            category__store__is_active=True,
+            category__store__vertical__slug=vertical,
+            product_type=product_type,
+        )
+        if query:
+            products = products.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(sku__icontains=query)
+                | Q(brand_name__icontains=query)
+            )
+
+        seen = set()
+        payload = []
+        for product in products.order_by("name", "sku")[:100]:
+            key = (product.name.lower(), (product.sku or "").lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            payload.append(
+                {
+                    "id": str(product.id),
+                    "vertical": {
+                        "id": str(product.category.store.vertical_id),
+                        "name": product.category.store.vertical.name,
+                        "slug": product.category.store.vertical.slug,
+                    },
+                    "name": product.name,
+                    "brand_name": product.brand_name or "",
+                    "barcode": product.sku or "",
+                    "description": product.description or "",
+                    "product_type": product.product_type,
+                    "unit_type": product.unit_type or "",
+                    "is_active": product.is_active,
+                    "source": "Merchant catalog",
+                }
+            )
+            if len(payload) >= 50:
+                break
+
+        return Response(payload)
+
 
 def get_or_create_merchant_store(user):
     store = Store.objects.filter(owner=user, is_active=True).first()
