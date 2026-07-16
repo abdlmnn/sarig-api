@@ -5,6 +5,5 @@ class UsersConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.users"
 
-    # profile auto-creation
-    # def ready(self):
-    #   import apps.users.signals
+    def ready(self):
+        from . import signals  # noqa: F401

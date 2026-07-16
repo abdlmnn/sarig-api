@@ -108,6 +108,42 @@ def rider_name(order):
     return order.rider.get_full_name() or order.rider.username
 
 
+def merchant_order_summary(order, average_delivery_minutes=18):
+    age_minutes = max(
+        int((timezone.now() - order.created_at).total_seconds() // 60),
+        0,
+    )
+    eta_minutes = 0
+    if order.status in [
+        OrderStatus.PENDING,
+        OrderStatus.ACCEPTED,
+        OrderStatus.PREPARING,
+    ]:
+        eta_minutes = max(PREP_TARGET_MINUTES - age_minutes, 0)
+    elif order.status == OrderStatus.READY:
+        eta_minutes = 9
+    elif order.status == OrderStatus.ON_THE_WAY:
+        eta_minutes = average_delivery_minutes
+
+    assigned_rider = rider_name(order)
+    return {
+        "order_id": str(order.id),
+        "id": f"SRG-{str(order.id)[:8].upper()}",
+        "customer_name": customer_name(order),
+        "items_summary": order_items_summary(order),
+        "status": activity_status(order.status),
+        "status_label": status_label(order.status),
+        "store_vertical_slug": order.store.vertical.slug,
+        "rider_name": assigned_rider,
+        "rider_label": assigned_rider or ("Assigned" if order.rider_id else "Waiting"),
+        "eta_minutes": eta_minutes,
+        "eta_label": minutes_label(eta_minutes),
+        "delivery_method": order.delivery_method,
+        "total_amount": str(money(order.total_amount)),
+        "created_at": order.created_at.isoformat(),
+    }
+
+
 def delivery_lane(address):
     if not address:
         return "Marawi City"
@@ -184,27 +220,7 @@ def build_store_order_activity(request):
 
     active_payload = []
     for order in active_orders_qs[:10]:
-        age_minutes = max(int((now - order.created_at).total_seconds() // 60), 0)
-        eta_minutes = max(PREP_TARGET_MINUTES - age_minutes, 0) if order.status in [
-            OrderStatus.PENDING,
-            OrderStatus.ACCEPTED,
-            OrderStatus.PREPARING,
-        ] else 0
-        if order.status in [OrderStatus.READY, OrderStatus.ON_THE_WAY]:
-            eta_minutes = 9 if order.status == OrderStatus.READY else average_delivery_minutes
-        active_payload.append(
-            {
-                "id": f"SRG-{str(order.id)[:8].upper()}",
-                "customer_name": customer_name(order),
-                "items_summary": order_items_summary(order),
-                "status": activity_status(order.status),
-                "status_label": status_label(order.status),
-                "rider_name": rider_name(order),
-                "rider_label": rider_name(order) or ("Assigned" if order.rider_id else "Waiting"),
-                "eta_minutes": eta_minutes,
-                "eta_label": minutes_label(eta_minutes),
-            }
-        )
+        active_payload.append(merchant_order_summary(order, average_delivery_minutes))
 
     alerts = []
     if attention_count:

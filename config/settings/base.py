@@ -201,6 +201,38 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": (os.getenv("JWT_AUTH_HEADER_TYPE", "Bearer"),),
 }
 
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "1").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+AUTH_REFRESH_COOKIE_NAMES = {
+    "ADMIN": (
+        "__Host-sarig-admin-refresh" if AUTH_COOKIE_SECURE else "sarig-admin-refresh"
+    ),
+    "MERCHANT": (
+        "__Host-sarig-merchant-refresh"
+        if AUTH_COOKIE_SECURE
+        else "sarig-merchant-refresh"
+    ),
+}
+AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
+AUTH_SESSION_REFRESH_HOURS = int(os.getenv("AUTH_SESSION_REFRESH_HOURS", "8"))
+AUTH_ADMIN_REMEMBER_DAYS = int(os.getenv("AUTH_ADMIN_REMEMBER_DAYS", "7"))
+AUTH_MERCHANT_REMEMBER_DAYS = int(os.getenv("AUTH_MERCHANT_REMEMBER_DAYS", "30"))
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
+
 
 API_V1_SUNSET = os.getenv("API_V1_SUNSET", "2026-12-31")
 ADMIN_URL_PATH = os.getenv("ADMIN_URL_PATH", "admin/")

@@ -1,12 +1,16 @@
-from datetime import timedelta
-
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenRefreshSerializer,
+)
+from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
 
 from apps.common.validators import validate_image_upload
 
 from .models import Role, User, Profile, Address
+from .auth_sessions import issue_refresh_token
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -91,13 +95,12 @@ class RoleAwareLoginSerializer(serializers.Serializer):
         if not self.is_allowed(authenticated_user):
             raise self.auth_error("forbidden")
 
-        refresh = RefreshToken.for_user(authenticated_user)
-        if attrs.get("remember_me"):
-            refresh.set_exp(lifetime=timedelta(days=14))
-        else:
-            refresh.set_exp(lifetime=timedelta(hours=12))
-
         account_type = self.get_required_scope(attrs, authenticated_user)
+        refresh = issue_refresh_token(
+            authenticated_user,
+            account_type,
+            attrs.get("remember_me", False),
+        )
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
@@ -159,6 +162,35 @@ class LoginSerializer(RoleAwareLoginSerializer):
         if account_type == "CUSTOMER":
             return bool(user.is_customer and not user.is_superuser)
         return True
+
+
+class AdminLoginSerializer(RoleAwareLoginSerializer):
+    required_scope = "ADMIN"
+
+
+class MerchantLoginSerializer(RoleAwareLoginSerializer):
+    required_scope = "MERCHANT"
+
+
+class LegacyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        if self.user.is_superuser or self.user.is_merchant:
+            raise AuthenticationFailed(
+                "Use the role-specific secure authentication endpoint."
+            )
+        return data
+
+
+class LegacyTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        token = RefreshToken(attrs["refresh"])
+        user = User.objects.filter(id=token.get("user_id")).first()
+        if user and (user.is_superuser or user.is_merchant):
+            raise InvalidToken(
+                "Use the role-specific secure authentication endpoint."
+            )
+        return super().validate(attrs)
 
 
 class ProfileSerializer(serializers.ModelSerializer):

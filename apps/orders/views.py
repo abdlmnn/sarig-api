@@ -5,8 +5,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, F, Sum
+from django.db.models import CharField, Count, F, Q, Sum
 from django.db.models.functions import TruncDate
+from django.db.models.functions import Cast
 from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -19,8 +20,8 @@ from apps.catalog.models import Product
 from apps.vendors.models import Store
 from apps.users.permissions import IsMerchant
 from apps.vendors.permissions import IsMerchantOrAdmin
-from .serializers import CheckoutRequestSerializer, OrderSerializer
-from .services import build_store_order_activity
+from .serializers import CheckoutRequestSerializer, MerchantOrderDetailSerializer, OrderSerializer
+from .services import ACTIVE_STATUSES, build_store_order_activity, merchant_order_summary
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,55 @@ class StoreOrderActivityView(APIView):
         if payload is None:
             return Response({"detail": "No active store found for this merchant."}, status=404)
         return Response(payload)
+
+
+class MerchantOrderDetailView(APIView):
+    permission_classes = [IsMerchant]
+
+    def get(self, request, order_id):
+        order = get_object_or_404(
+            Order.objects.select_related(
+                "customer", "store", "rider", "rider__rider_profile"
+            ).prefetch_related("items__product"),
+            id=order_id,
+            store__owner=request.user,
+        )
+        return Response(MerchantOrderDetailSerializer(order).data)
+
+
+class MerchantOrderListView(APIView):
+    permission_classes = [IsMerchant]
+
+    def get(self, request):
+        orders = (
+            Order.objects.filter(store__owner=request.user)
+            .select_related("customer", "store__vertical", "rider")
+            .prefetch_related("items__product")
+            .annotate(order_id_text=Cast("id", output_field=CharField()))
+            .order_by("created_at", "id")
+        )
+        requested_status = request.query_params.get("status", "ACTIVE").upper()
+        if requested_status == "ACTIVE":
+            orders = orders.filter(status__in=ACTIVE_STATUSES)
+        elif requested_status != "ALL":
+            if requested_status not in OrderStatus.values:
+                return Response(
+                    {"detail": "Invalid order status."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            orders = orders.filter(status=requested_status)
+
+        query = request.query_params.get("q", "").strip()
+        if query:
+            order_query = query.upper().removeprefix("SRG-").strip()
+            orders = orders.filter(
+                Q(order_id_text__icontains=order_query)
+                | Q(customer__first_name__icontains=query)
+                | Q(customer__last_name__icontains=query)
+                | Q(customer__username__icontains=query)
+            ).distinct()
+
+        return Response({"orders": [merchant_order_summary(order) for order in orders]})
 
 
 class MerchantStoreOrderAnalyticsView(APIView):
@@ -358,9 +408,9 @@ class MerchantOrderActionView(APIView):
             })
 
         elif action == "mark_ready":
-            if order.status != OrderStatus.ACCEPTED:
+            if order.status not in [OrderStatus.ACCEPTED, OrderStatus.PREPARING]:
                 return Response(
-                    {"error": "Order must be 'Accepted' before marking as ready."},
+                    {"error": "Order must be accepted or preparing before marking as ready."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -388,6 +438,29 @@ class MerchantOrderActionView(APIView):
                 "status": "success",
                 "message": "Order is ready for pickup. Finding a rider...",
                 "order": OrderSerializer(order).data
+            })
+
+        elif action == "mark_preparing":
+            if order.status != OrderStatus.ACCEPTED:
+                return Response(
+                    {"error": "Order must be accepted before preparation starts."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            order.status = OrderStatus.PREPARING
+            order.save()
+            order.broadcast_status_update()
+
+            from apps.users.notifications import PushNotificationService
+            PushNotificationService.notify_order_status(
+                order.customer,
+                "PREPARING",
+                order.id,
+            )
+            return Response({
+                "status": "success",
+                "message": "Order preparation started.",
+                "order": OrderSerializer(order).data,
             })
 
         elif action == "reject":
@@ -428,6 +501,6 @@ class MerchantOrderActionView(APIView):
             })
 
         return Response(
-            {"error": "Invalid action. Use 'accept' or 'reject'."},
+            {"error": "Invalid order action."},
             status=status.HTTP_400_BAD_REQUEST
         )

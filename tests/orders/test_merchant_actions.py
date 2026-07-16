@@ -56,12 +56,42 @@ class MerchantOrderActionTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.ACCEPTED)
 
+    def test_mark_preparing_moves_accepted_order_to_preparing(self):
+        order = self._create_order(status=OrderStatus.ACCEPTED)
+        self.client.force_authenticate(user=self.merchant)
+
+        response = self.client.post(
+            f"/api/v1/orders/{order.id}/action/",
+            {"action": "mark_preparing"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, OrderStatus.PREPARING)
+
     @patch("apps.riders.services.RiderDispatcherService.assign_rider_to_order")
     def test_mark_ready_dispatches_for_delivery(self, assign_mock):
         order = self._create_order(status=OrderStatus.ACCEPTED, delivery_method="DELIVERY")
         self.client.force_authenticate(user=self.merchant)
         res = self.client.post(f"/api/v1/orders/{order.id}/action/", {"action": "mark_ready"}, format="json")
         self.assertEqual(res.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, OrderStatus.READY)
+        assign_mock.assert_called_once()
+
+    @patch("apps.riders.services.RiderDispatcherService.assign_rider_to_order")
+    def test_mark_ready_accepts_preparing_order(self, assign_mock):
+        order = self._create_order(status=OrderStatus.PREPARING)
+        self.client.force_authenticate(user=self.merchant)
+
+        response = self.client.post(
+            f"/api/v1/orders/{order.id}/action/",
+            {"action": "mark_ready"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.READY)
         assign_mock.assert_called_once()

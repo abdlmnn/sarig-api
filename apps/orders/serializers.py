@@ -85,3 +85,40 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivered_at",
         ]
         read_only_fields = ["id", "status", "created_at", "updated_at", "delivered_at"]
+
+
+class MerchantOrderDetailSerializer(OrderSerializer):
+    tracking = serializers.SerializerMethodField()
+
+    class Meta(OrderSerializer.Meta):
+        fields = OrderSerializer.Meta.fields + [
+            "delivery_method",
+            "estimated_arrival_time",
+            "tracking",
+        ]
+
+    def get_tracking(self, order):
+        rider_profile = getattr(order.rider, "rider_profile", None) if order.rider else None
+        rider = None
+        if (
+            rider_profile
+            and rider_profile.current_latitude is not None
+            and rider_profile.current_longitude is not None
+        ):
+            rider = {
+                "latitude": str(rider_profile.current_latitude),
+                "longitude": str(rider_profile.current_longitude),
+                "last_updated_at": rider_profile.last_location_update.isoformat(),
+            }
+
+        return {
+            "store": {
+                "latitude": str(order.store.latitude),
+                "longitude": str(order.store.longitude),
+            },
+            "customer": {
+                "latitude": str(order.delivery_latitude),
+                "longitude": str(order.delivery_longitude),
+            },
+            "rider": rider,
+        }
