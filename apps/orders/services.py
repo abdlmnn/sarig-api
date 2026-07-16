@@ -37,12 +37,28 @@ def minutes_label(minutes):
     return f"{int(minutes)} min"
 
 
-def status_label(status):
+def status_label(status, vertical_slug=""):
+    if status == OrderStatus.ACCEPTED:
+        return {
+            "grocery": "Accepted",
+            "pharmacy": "Accepted",
+            "restaurant": "Accepted",
+        }.get(vertical_slug, "Accepted")
+    if status == OrderStatus.PREPARING:
+        return {
+            "grocery": "Picking items",
+            "pharmacy": "Verifying order",
+            "restaurant": "Preparing",
+        }.get(vertical_slug, "Preparing")
+    if status == OrderStatus.READY:
+        return {
+            "grocery": "Packed",
+            "pharmacy": "Ready for pickup",
+            "restaurant": "Ready",
+        }.get(vertical_slug, "Ready")
+
     return {
         OrderStatus.PENDING: "New",
-        OrderStatus.ACCEPTED: "Accepted",
-        OrderStatus.PREPARING: "Preparing",
-        OrderStatus.READY: "Ready",
         OrderStatus.ON_THE_WAY: "On delivery",
         OrderStatus.DELIVERED: "Delivered",
         OrderStatus.CANCELLED: "Cancelled",
@@ -131,7 +147,7 @@ def build_store_order_activity(request):
     yesterday_orders = orders.filter(created_at__gte=yesterday_start, created_at__lt=yesterday_end)
     active_orders_qs = (
         orders.filter(status__in=ACTIVE_STATUSES)
-        .select_related("customer", "rider", "store")
+        .select_related("customer", "rider", "store__vertical")
         .prefetch_related("items__product")
         .order_by("-created_at")
     )
@@ -184,27 +200,7 @@ def build_store_order_activity(request):
 
     active_payload = []
     for order in active_orders_qs[:10]:
-        age_minutes = max(int((now - order.created_at).total_seconds() // 60), 0)
-        eta_minutes = max(PREP_TARGET_MINUTES - age_minutes, 0) if order.status in [
-            OrderStatus.PENDING,
-            OrderStatus.ACCEPTED,
-            OrderStatus.PREPARING,
-        ] else 0
-        if order.status in [OrderStatus.READY, OrderStatus.ON_THE_WAY]:
-            eta_minutes = 9 if order.status == OrderStatus.READY else average_delivery_minutes
-        active_payload.append(
-            {
-                "id": f"SRG-{str(order.id)[:8].upper()}",
-                "customer_name": customer_name(order),
-                "items_summary": order_items_summary(order),
-                "status": activity_status(order.status),
-                "status_label": status_label(order.status),
-                "rider_name": rider_name(order),
-                "rider_label": rider_name(order) or ("Assigned" if order.rider_id else "Waiting"),
-                "eta_minutes": eta_minutes,
-                "eta_label": minutes_label(eta_minutes),
-            }
-        )
+        active_payload.append(merchant_order_summary(order, now))
 
     alerts = []
     if attention_count:
@@ -311,4 +307,65 @@ def build_store_order_activity(request):
             },
         },
         "delivery_lanes": delivery_lanes,
+    }
+
+
+def merchant_order_summary(order, now=None):
+    now = now or timezone.now()
+    vertical_slug = order.store.vertical.slug if order.store_id and order.store.vertical_id else ""
+    age_minutes = max(int((now - order.created_at).total_seconds() // 60), 0)
+    eta_minutes = max(PREP_TARGET_MINUTES - age_minutes, 0) if order.status in [
+        OrderStatus.PENDING,
+        OrderStatus.ACCEPTED,
+        OrderStatus.PREPARING,
+    ] else 0
+    if order.status == OrderStatus.READY:
+        eta_minutes = 9
+    elif order.status == OrderStatus.ON_THE_WAY and order.estimated_arrival_time:
+        eta_minutes = max(int((order.estimated_arrival_time - now).total_seconds() // 60), 0)
+
+    return {
+        "order_id": str(order.id),
+        "id": f"SRG-{str(order.id)[:8].upper()}",
+        "customer_name": customer_name(order),
+        "items_summary": order_items_summary(order),
+        "status": activity_status(order.status),
+        "status_label": status_label(order.status, vertical_slug),
+        "store_vertical_slug": vertical_slug,
+        "rider_name": rider_name(order),
+        "rider_label": rider_name(order) or ("Assigned" if order.rider_id else "Waiting"),
+        "eta_minutes": eta_minutes,
+        "eta_label": minutes_label(eta_minutes),
+        "created_at": order.created_at.isoformat(),
+        "total_amount": str(money(order.total_amount)),
+        "delivery_method": order.delivery_method,
+    }
+
+
+def order_tracking_payload(order):
+    rider_profile = getattr(order.rider, "rider_profile", None)
+    rider_latitude = getattr(rider_profile, "current_latitude", None)
+    rider_longitude = getattr(rider_profile, "current_longitude", None)
+    rider_updated_at = getattr(rider_profile, "last_location_update", None)
+
+    return {
+        "store": {
+            "latitude": str(order.store.latitude),
+            "longitude": str(order.store.longitude),
+        },
+        "customer": {
+            "latitude": str(order.delivery_latitude),
+            "longitude": str(order.delivery_longitude),
+        },
+        "rider": (
+            {
+                "latitude": str(rider_latitude),
+                "longitude": str(rider_longitude),
+                "last_updated_at": rider_updated_at.isoformat()
+                if rider_updated_at
+                else None,
+            }
+            if rider_latitude is not None and rider_longitude is not None
+            else None
+        ),
     }
