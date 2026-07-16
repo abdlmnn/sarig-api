@@ -1,5 +1,7 @@
 from .serializers import (
+    AdminLoginSerializer,
     LoginSerializer,
+    MerchantLoginSerializer,
     UserSerializer,
     ProfileSerializer,
     AddressSerializer,
@@ -11,8 +13,20 @@ from rest_framework import viewsets, generics, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+from django.middleware.csrf import get_token
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+from rest_framework import permissions
+
+from .auth_sessions import (
+    clear_refresh_cookie,
+    cookie_name,
+    rotate_refresh_token,
+    set_refresh_cookie,
+    validate_refresh_token,
+)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -115,6 +129,128 @@ class ScopedLoginView(APIView):
 
 class LoginView(ScopedLoginView):
     serializer_class = LoginSerializer
+
+    def post(self, request):
+        if str(request.data.get("account_type", "")).upper() in {"ADMIN", "MERCHANT"}:
+            return Response(
+                {"detail": "Use the role-specific secure authentication endpoint."},
+                status=status.HTTP_410_GONE,
+            )
+        return super().post(request)
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class CsrfBootstrapView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        response = Response({"csrf_token": get_token(request)})
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class CookieScopedLoginView(ScopedLoginView):
+    account_type = None
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data, context={"request": request})
+        if not serializer.is_valid():
+            return Response(self.format_login_errors(serializer.errors), status=status.HTTP_400_BAD_REQUEST)
+
+        payload = dict(serializer.validated_data)
+        refresh = payload.pop("refresh")
+        remember_me = payload.pop("remember_me", False)
+        response = Response(payload, status=status.HTTP_200_OK)
+        set_refresh_cookie(response, refresh, self.account_type, remember_me)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class AdminCookieLoginView(CookieScopedLoginView):
+    account_type = "ADMIN"
+    serializer_class = AdminLoginSerializer
+
+
+class MerchantCookieLoginView(CookieScopedLoginView):
+    account_type = "MERCHANT"
+    serializer_class = MerchantLoginSerializer
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class CookieRefreshView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth"
+    account_type = None
+
+    def post(self, request):
+        raw_token = request.COOKIES.get(cookie_name(self.account_type))
+        if not raw_token:
+            return Response({"detail": "Session is unavailable."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            access, refresh, user, remember_me = rotate_refresh_token(
+                raw_token,
+                self.account_type,
+            )
+        except (TokenError, APIException):
+            try:
+                RefreshToken(raw_token).blacklist()
+            except TokenError:
+                pass
+            response = Response(
+                {"detail": "Session is invalid or expired."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            clear_refresh_cookie(response, self.account_type)
+            return response
+
+        response = Response(
+            {
+                "access": access,
+                "account_type": self.account_type,
+                "user": UserSerializer(user).data,
+            }
+        )
+        set_refresh_cookie(response, refresh, self.account_type, remember_me)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class AdminCookieRefreshView(CookieRefreshView):
+    account_type = "ADMIN"
+
+
+class MerchantCookieRefreshView(CookieRefreshView):
+    account_type = "MERCHANT"
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class CookieLogoutView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth"
+    account_type = None
+
+    def post(self, request):
+        raw_token = request.COOKIES.get(cookie_name(self.account_type))
+        if raw_token:
+            try:
+                token, _ = validate_refresh_token(raw_token, self.account_type)
+                token.blacklist()
+            except TokenError:
+                pass
+
+        response = Response({"detail": "Logged out."})
+        clear_refresh_cookie(response, self.account_type)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class AdminCookieLogoutView(CookieLogoutView):
+    account_type = "ADMIN"
+
+
+class MerchantCookieLogoutView(CookieLogoutView):
+    account_type = "MERCHANT"
 
 
 class LogoutView(APIView):

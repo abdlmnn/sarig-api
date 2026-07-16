@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
@@ -64,9 +65,9 @@ class MerchantDashboardOverviewTests(TestCase):
         self.assertIn("next_status_change", response.data["merchant"])
 
     def test_merchant_order_dashboard_overview_returns_order_payload(self):
-        self.create_order(OrderStatus.PENDING, "150.00")
-        self.create_order(OrderStatus.PREPARING, "200.00")
-        self.create_order(OrderStatus.READY, "300.00", "MSU Main, Marawi City")
+        pending = self.create_order(OrderStatus.PENDING, "150.00")
+        preparing = self.create_order(OrderStatus.PREPARING, "200.00")
+        ready = self.create_order(OrderStatus.READY, "300.00", "MSU Main, Marawi City")
         delivered = self.create_order(OrderStatus.DELIVERED, "400.00")
         delivered.delivered_at = timezone.now()
         delivered.save(update_fields=["delivered_at"])
@@ -84,6 +85,11 @@ class MerchantDashboardOverviewTests(TestCase):
         self.assertEqual(response.data["settlement"]["fees"]["value"], "157.50")
         self.assertEqual(response.data["settlement"]["expected_payout"]["value"], "892.50")
         self.assertTrue(response.data["active_orders"])
+        active_orders = response.data["active_orders"]
+        order_ids = [item["order_id"] for item in active_orders]
+        self.assertCountEqual(order_ids, [str(pending.id), str(preparing.id), str(ready.id)])
+        self.assertEqual(len(order_ids), len(set(order_ids)))
+        self.assertTrue(all(item["id"].startswith("SRG-") for item in active_orders))
         self.assertTrue(response.data["delivery_lanes"])
 
     def test_merchant_dashboard_requires_merchant_role(self):
@@ -92,6 +98,96 @@ class MerchantDashboardOverviewTests(TestCase):
         response = self.client.get("/api/v1/orders/store-activity/")
 
         self.assertEqual(response.status_code, 403)
+
+    def test_merchant_can_view_owned_order_detail(self):
+        order = self.create_order(OrderStatus.PENDING)
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(str(response.data["id"]), str(order.id))
+        self.assertEqual(response.data["customer_name"], "Amina P.")
+        self.assertEqual(response.data["delivery_method"], DeliveryMethod.DELIVERY)
+        self.assertEqual(len(response.data["items"]), 1)
+        self.assertIsNone(response.data["tracking"]["rider"])
+
+    def test_merchant_cannot_view_another_merchants_order_detail(self):
+        order = self.create_order(OrderStatus.PENDING)
+        other_merchant = User.objects.create_user(
+            username="other-merchant",
+            email="other-merchant@example.com",
+            password="password123",
+        )
+        merchant_role = Role.objects.get(name="Merchant")
+        other_merchant.roles.add(merchant_role)
+        self.client.force_authenticate(other_merchant)
+
+        response = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_order_detail_requires_authentication(self):
+        order = self.create_order(OrderStatus.PENDING)
+
+        response = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_merchant_order_list_returns_active_orders_oldest_first(self):
+        oldest = self.create_order(OrderStatus.PENDING)
+        newest = self.create_order(OrderStatus.READY)
+        self.create_order(OrderStatus.DELIVERED)
+        Order.objects.filter(id=oldest.id).update(
+            created_at=timezone.now() - timedelta(minutes=5)
+        )
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get("/api/v1/orders/merchant/?status=ACTIVE")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["order_id"] for item in response.data["orders"]],
+            [str(oldest.id), str(newest.id)],
+        )
+        self.assertEqual(response.data["orders"][0]["status"], "NEW")
+        self.assertEqual(
+            response.data["orders"][0]["store_vertical_slug"],
+            "restaurant",
+        )
+
+    def test_merchant_order_list_supports_customer_search(self):
+        order = self.create_order(OrderStatus.PENDING)
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get("/api/v1/orders/merchant/?status=ALL&q=Amina")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["order_id"] for item in response.data["orders"]],
+            [str(order.id)],
+        )
+
+    def test_merchant_order_list_rejects_invalid_status(self):
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get("/api/v1/orders/merchant/?status=UNKNOWN")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_merchant_order_list_excludes_another_merchants_orders(self):
+        self.create_order(OrderStatus.PENDING)
+        other_merchant = User.objects.create_user(
+            username="list-merchant",
+            email="list-merchant@example.com",
+            password="password123",
+        )
+        other_merchant.roles.add(Role.objects.get(name="Merchant"))
+        self.client.force_authenticate(other_merchant)
+
+        response = self.client.get("/api/v1/orders/merchant/?status=ALL")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_merchant_can_close_store_temporarily(self):
         self.client.force_authenticate(self.merchant)

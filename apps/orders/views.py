@@ -5,8 +5,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, F, Q, Sum
+from django.db.models import CharField, Count, F, Q, Sum
 from django.db.models.functions import TruncDate
+from django.db.models.functions import Cast
 from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -51,18 +52,26 @@ class MerchantOrderListView(APIView):
             Order.objects.filter(store_id__in=[store.id for store in stores])
             .select_related("customer", "rider", "store__vertical")
             .prefetch_related("items__product")
+            .annotate(order_id_text=Cast("id", output_field=CharField()))
         )
 
         if status_filter == "ACTIVE":
             orders = orders.filter(status__in=ACTIVE_STATUSES)
         elif status_filter != "ALL":
+            if status_filter not in OrderStatus.values:
+                return Response(
+                    {"detail": "Invalid order status."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             orders = orders.filter(status=status_filter)
 
-        orders = orders.order_by("created_at")
+        orders = orders.order_by("created_at", "id")
 
         if query:
+            order_query = query.upper().removeprefix("SRG-").strip()
             orders = orders.filter(
-                Q(customer__first_name__icontains=query)
+                Q(order_id_text__icontains=order_query)
+                | Q(customer__first_name__icontains=query)
                 | Q(customer__last_name__icontains=query)
                 | Q(customer__username__icontains=query)
                 | Q(items__product__name__icontains=query)
@@ -74,7 +83,7 @@ class MerchantOrderListView(APIView):
 
 
 class MerchantOrderDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsMerchant]
 
     def get(self, request, order_id):
         order = get_object_or_404(
@@ -85,12 +94,8 @@ class MerchantOrderDetailView(APIView):
                 "rider__rider_profile",
             ).prefetch_related("items__product"),
             id=order_id,
+            store__owner=request.user,
         )
-        if not request.user.is_staff and order.store.owner != request.user:
-            return Response(
-                {"error": "You do not have permission to view this order."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
 
         return Response(OrderSerializer(order).data)
 

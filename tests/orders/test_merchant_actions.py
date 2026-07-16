@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase, override_settings
@@ -74,7 +75,6 @@ class MerchantOrderActionTests(TestCase):
         self.assertEqual(res.status_code, 400)
         order.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.PENDING)
-
     @patch("apps.riders.services.RiderDispatcherService.assign_rider_to_order")
     def test_mark_ready_dispatches_for_delivery(self, assign_mock):
         order = self._create_order(status=OrderStatus.ACCEPTED, delivery_method="DELIVERY")
@@ -136,10 +136,10 @@ class MerchantOrderActionTests(TestCase):
         newer_order = self._create_order(status=OrderStatus.PENDING)
         older_order = self._create_order(status=OrderStatus.PENDING)
         Order.objects.filter(id=older_order.id).update(
-            created_at=timezone.now() - timezone.timedelta(minutes=15)
+            created_at=timezone.now() - timedelta(minutes=15)
         )
         Order.objects.filter(id=newer_order.id).update(
-            created_at=timezone.now() - timezone.timedelta(minutes=3)
+            created_at=timezone.now() - timedelta(minutes=3)
         )
 
         self.client.force_authenticate(user=self.merchant)
@@ -153,10 +153,10 @@ class MerchantOrderActionTests(TestCase):
         newer_order = self._create_order(status=OrderStatus.DELIVERED)
         older_order = self._create_order(status=OrderStatus.CANCELLED)
         Order.objects.filter(id=older_order.id).update(
-            created_at=timezone.now() - timezone.timedelta(minutes=15)
+            created_at=timezone.now() - timedelta(minutes=15)
         )
         Order.objects.filter(id=newer_order.id).update(
-            created_at=timezone.now() - timezone.timedelta(minutes=3)
+            created_at=timezone.now() - timedelta(minutes=3)
         )
 
         self.client.force_authenticate(user=self.merchant)
@@ -168,10 +168,11 @@ class MerchantOrderActionTests(TestCase):
 
     def test_other_merchant_cannot_view_order_detail(self):
         other_merchant = User.objects.create_user("viewer", "viewer@test.com", "pw12345")
+        other_merchant.roles.add(Role.objects.get(name="Merchant"))
         order = self._create_order(status=OrderStatus.ACCEPTED)
         self.client.force_authenticate(user=other_merchant)
         res = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 404)
 
     def test_reject_requires_reason(self):
         order = self._create_order(status=OrderStatus.ACCEPTED)
@@ -184,7 +185,6 @@ class MerchantOrderActionTests(TestCase):
         self.assertEqual(res.status_code, 400)
         order.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.ACCEPTED)
-
     @patch("apps.payments.services.PayMongoService.create_refund")
     def test_reject_paid_order_marks_refunded(self, refund_mock):
         refund_mock.return_value = {"status": "success"}
