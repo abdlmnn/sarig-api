@@ -13,6 +13,7 @@ from .views import (
     ProductInventoryUpdateView,
     ProductManagementDetailView,
     ProductManagementListView,
+    ProductReferenceViewSet,
     ProductViewSet,
 )
 
@@ -21,6 +22,7 @@ router.register(r"categories", CategoryViewSet)
 router.register(r"category-templates", CategoryTemplateViewSet, basename="category-templates")
 router.register(r"products", ProductViewSet)
 router.register(r"medicine-references", MedicineReferenceViewSet, basename="medicine-references")
+router.register(r"product-references", ProductReferenceViewSet, basename="product-references")
 
 urlpatterns = [
     path("categories/manage/", CategoryManagementListView.as_view(), name="catalog-category-management"),

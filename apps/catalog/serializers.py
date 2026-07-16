@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.common.validators import validate_image_upload
-from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductType, ModifierGroup, ModifierItem
+from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductReference, ProductType, ModifierGroup, ModifierItem
 
 
 class ModifierItemSerializer(serializers.ModelSerializer):
@@ -56,6 +56,32 @@ class CategoryTemplateSerializer(serializers.ModelSerializer):
             "description",
             "order",
             "is_active",
+        ]
+
+    def get_vertical(self, obj):
+        return {
+            "id": str(obj.vertical_id),
+            "name": obj.vertical.name,
+            "slug": obj.vertical.slug,
+        }
+
+
+class ProductReferenceSerializer(serializers.ModelSerializer):
+    vertical = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductReference
+        fields = [
+            "id",
+            "vertical",
+            "name",
+            "brand_name",
+            "barcode",
+            "description",
+            "product_type",
+            "unit_type",
+            "is_active",
+            "source",
         ]
 
     def get_vertical(self, obj):

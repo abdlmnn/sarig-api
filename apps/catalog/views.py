@@ -15,8 +15,8 @@ from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
 
-from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product
-from .serializers import CategorySerializer, CategoryTemplateSerializer, MedicineReferenceSerializer, ProductSerializer
+from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductReference
+from .serializers import CategorySerializer, CategoryTemplateSerializer, MedicineReferenceSerializer, ProductReferenceSerializer, ProductSerializer
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -83,6 +83,30 @@ class CategoryTemplateViewSet(viewsets.ReadOnlyModelViewSet):
                 | Q(slug__icontains=query)
             )
         return queryset.order_by("order", "name")[:50]
+
+
+class ProductReferenceViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ProductReferenceSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = ProductReference.objects.select_related("vertical").filter(is_active=True)
+        vertical = self.request.query_params.get("vertical", "").strip()
+        product_type = self.request.query_params.get("product_type", "").strip()
+        query = self.request.query_params.get("q", "").strip()
+
+        if vertical:
+            queryset = queryset.filter(vertical__slug=vertical)
+        if product_type:
+            queryset = queryset.filter(product_type=product_type)
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query)
+                | Q(brand_name__icontains=query)
+                | Q(barcode__icontains=query)
+                | Q(description__icontains=query)
+            )
+        return queryset.order_by("name", "brand_name")[:50]
 
 
 def get_or_create_merchant_store(user):
