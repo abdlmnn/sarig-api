@@ -20,7 +20,7 @@ python manage.py runserver
 
 API base URL: `http://127.0.0.1:8000/api/v1/`
 
-## Docker Compose (API + Postgres + Nginx)
+## Docker Compose (API + PostGIS + Nginx)
 
 ```bash
 docker compose up --build
@@ -28,7 +28,8 @@ docker compose up --build
 
 URLs:
 - Nginx: `http://localhost`
-- API direct: `http://localhost:8000`
+
+Docker uses the `postgis/postgis:15-3.4` database image, so another laptop does not need a manual Windows PostgreSQL/PostGIS/GDAL install for the database.
 
 ## Environment Variables
 
@@ -45,6 +46,16 @@ cp .env.production.example .env
 ```
 
 Then update secrets in `.env` (for example `SECRET_KEY` and database credentials).
+
+For Docker Compose, keep these values in `.env`:
+
+```env
+USE_POSTGIS=1
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+```
+
+For local non-Docker development with SQLite, keep `USE_POSTGIS=False`. For local non-Docker development with PostGIS, install PostgreSQL, PostGIS, and the native GIS libraries on the machine, then set `USE_POSTGIS=1` and point `POSTGRES_HOST` to that local database.
 
 Location services also require provider keys for address search and road distance estimates:
 

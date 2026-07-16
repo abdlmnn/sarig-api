@@ -5,9 +5,16 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Build deps for psycopg2-binary compatibility in slim images.
+# Native database and GIS libraries for psycopg and GeoDjango/PostGIS.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential libpq-dev \
+    && apt-get install -y --no-install-recommends \
+        binutils \
+        build-essential \
+        gdal-bin \
+        libgdal-dev \
+        libgeos-dev \
+        libpq-dev \
+        libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/

@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.catalog.models import Category, InventoryMode, Product, ProductType, UnitType
 from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
+from apps.riders.models import RiderProfile
 from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store, StoreDeliveryTime
 
@@ -82,6 +83,23 @@ class Command(BaseCommand):
                 start=1,
             )
         ]
+        rider_points = [
+            (Decimal("8.004400"), Decimal("124.286200")),
+            (Decimal("8.009600"), Decimal("124.291300")),
+            (Decimal("7.999500"), Decimal("124.279800")),
+        ]
+        for rider, (latitude, longitude) in zip(riders, rider_points):
+            RiderProfile.objects.update_or_create(
+                user=rider,
+                defaults={
+                    "is_online": True,
+                    "is_available": False,
+                    "can_do_delivery": True,
+                    "current_latitude": latitude,
+                    "current_longitude": longitude,
+                    "vehicle_type": "MOTORCYCLE",
+                },
+            )
 
         vertical = self._restaurant_vertical()
         store, _ = Store.objects.update_or_create(
@@ -252,7 +270,13 @@ class Command(BaseCommand):
 
     def _create_order(self, store, customers, riders, products, lanes, status, created_at, rng):
         customer = rng.choice(customers)
-        delivery_method = DeliveryMethod.PICKUP if rng.random() < 0.15 else DeliveryMethod.DELIVERY
+        delivery_method = (
+            DeliveryMethod.DELIVERY
+            if status in [OrderStatus.ON_THE_WAY, OrderStatus.DELIVERED]
+            else DeliveryMethod.PICKUP
+            if rng.random() < 0.15
+            else DeliveryMethod.DELIVERY
+        )
         lane, latitude, longitude = rng.choice(lanes)
         selected_products = rng.sample(products, rng.randint(1, 3))
         subtotal = Decimal("0.00")

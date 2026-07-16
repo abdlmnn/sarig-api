@@ -15,8 +15,8 @@ from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
 
-from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product
-from .serializers import CategorySerializer, CategoryTemplateSerializer, MedicineReferenceSerializer, ProductSerializer
+from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductReference
+from .serializers import CategorySerializer, CategoryTemplateSerializer, MedicineReferenceSerializer, ProductReferenceSerializer, ProductSerializer
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -85,6 +85,87 @@ class CategoryTemplateViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset.order_by("order", "name")[:50]
 
 
+class ProductReferenceViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ProductReferenceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = ProductReference.objects.select_related("vertical").filter(is_active=True)
+        vertical = self.request.query_params.get("vertical", "").strip()
+        product_type = self.request.query_params.get("product_type", "").strip()
+        query = self.request.query_params.get("q", "").strip()
+
+        if vertical:
+            queryset = queryset.filter(vertical__slug=vertical)
+        if product_type:
+            queryset = queryset.filter(product_type=product_type)
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query)
+                | Q(brand_name__icontains=query)
+                | Q(barcode__icontains=query)
+                | Q(description__icontains=query)
+            )
+        return queryset.order_by("name", "brand_name")[:50]
+
+    def list(self, request, *args, **kwargs):
+        references = list(self.get_queryset())
+        if references:
+            return Response(self.get_serializer(references, many=True).data)
+
+        vertical = request.query_params.get("vertical", "").strip()
+        product_type = request.query_params.get("product_type", "").strip()
+        query = request.query_params.get("q", "").strip()
+        if not vertical or not product_type:
+            return Response([])
+
+        products = Product.objects.select_related(
+            "category__store__vertical"
+        ).filter(
+            is_active=True,
+            category__store__is_active=True,
+            category__store__vertical__slug=vertical,
+            product_type=product_type,
+        )
+        if query:
+            products = products.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(sku__icontains=query)
+                | Q(brand_name__icontains=query)
+            )
+
+        seen = set()
+        payload = []
+        for product in products.order_by("name", "sku")[:100]:
+            key = (product.name.lower(), (product.sku or "").lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            payload.append(
+                {
+                    "id": str(product.id),
+                    "vertical": {
+                        "id": str(product.category.store.vertical_id),
+                        "name": product.category.store.vertical.name,
+                        "slug": product.category.store.vertical.slug,
+                    },
+                    "name": product.name,
+                    "brand_name": product.brand_name or "",
+                    "barcode": product.sku or "",
+                    "description": product.description or "",
+                    "product_type": product.product_type,
+                    "unit_type": product.unit_type or "",
+                    "is_active": product.is_active,
+                    "source": "Merchant catalog",
+                }
+            )
+            if len(payload) >= 50:
+                break
+
+        return Response(payload)
+
+
 def get_or_create_merchant_store(user):
     store = Store.objects.filter(owner=user, is_active=True).first()
     if store:
@@ -144,10 +225,10 @@ def product_payload(product, request):
         "image_url": request.build_absolute_uri(product.image.url) if product.image else "",
         "sku": product.sku or "",
         "product_type": product.product_type,
-        "generic_name": product.generic_name,
-        "brand_name": product.brand_name,
-        "dosage": product.dosage,
-        "medicine_form": product.medicine_form,
+        "generic_name": product.generic_name or "",
+        "brand_name": product.brand_name or "",
+        "dosage": product.dosage or "",
+        "medicine_form": product.medicine_form or "",
         "requires_prescription": product.requires_prescription,
         "medicine_reference": str(product.medicine_reference_id) if product.medicine_reference_id else "",
         "preparation_time_minutes": product.preparation_time_minutes,

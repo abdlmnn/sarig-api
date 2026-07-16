@@ -9,8 +9,10 @@ from apps.orders.models import Order, OrderStatus
 from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
 from apps.vendors.models import Store
+from apps.vendors.models import StoreManualOverride
 
 from .models import AdminAlert, ServiceZone
+from .serializers import AdminMerchantActionSerializer, AdminRiderActionSerializer
 from .services import (
     ACTIVE_ORDER_STATUSES,
     ACTIVE_RIDE_STATUSES,
@@ -210,6 +212,52 @@ class AdminMerchantListView(APIView):
         return Response(envelope({"items": items, "pagination": pagination}, "Merchants loaded"))
 
 
+class AdminMerchantActionView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def patch(self, request, store_id):
+        store = get_object_or_404(Store.objects.select_related("owner"), id=store_id)
+        serializer = AdminMerchantActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action = serializer.validated_data["action"]
+        reason = serializer.validated_data.get("reason", "")
+
+        if action == "PAUSE_ACCOUNT":
+            if Order.objects.filter(store=store, status__in=ACTIVE_ORDER_STATUSES).exists():
+                return Response(
+                    {
+                        "detail": (
+                            "This merchant still has active orders. Stop new orders "
+                            "and complete the live queue before pausing the account."
+                        )
+                    },
+                    status=409,
+                )
+            store.is_active = False
+            store.manual_override = StoreManualOverride.PAUSED_ORDERS
+            store.manual_override_reason = reason
+        elif action == "REACTIVATE_ACCOUNT":
+            store.is_active = True
+            store.manual_override = None
+            store.manual_override_reason = ""
+        elif action == "STOP_ORDERS":
+            store.manual_override = StoreManualOverride.CLOSED_TEMPORARILY
+            store.manual_override_reason = reason
+        else:
+            store.manual_override = None
+            store.manual_override_reason = ""
+
+        store.save(
+            update_fields=[
+                "is_active",
+                "manual_override",
+                "manual_override_reason",
+                "updated_at",
+            ]
+        )
+        return Response(envelope(merchant_payloads([store])[0], "Merchant updated"))
+
+
 class AdminRiderListView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
@@ -220,12 +268,14 @@ class AdminRiderListView(APIView):
         search = str(request.query_params.get("search", "")).strip().lower()
         zone_id = request.query_params.get("zone_id")
 
-        if status_filter == "online":
-            riders = [rider for rider in riders if rider.is_online and rider.is_available]
+        if status_filter == "suspended":
+            riders = [rider for rider in riders if not rider.user.is_active]
+        elif status_filter == "online":
+            riders = [rider for rider in riders if rider.user.is_active and rider.is_online and rider.is_available]
         elif status_filter == "busy":
-            riders = [rider for rider in riders if rider.is_online and not rider.is_available]
+            riders = [rider for rider in riders if rider.user.is_active and rider.is_online and not rider.is_available]
         elif status_filter == "offline":
-            riders = [rider for rider in riders if not rider.is_online]
+            riders = [rider for rider in riders if rider.user.is_active and not rider.is_online]
         if vehicle_type:
             riders = [rider for rider in riders if rider.vehicle_type.lower() == vehicle_type.lower()]
         if search:
@@ -237,6 +287,49 @@ class AdminRiderListView(APIView):
         page, page_size = parse_page(request)
         items, pagination = pagination_payload([rider_payload(rider) for rider in riders], page, page_size)
         return Response(envelope({"items": items, "pagination": pagination}, "Riders loaded"))
+
+
+class AdminRiderActionView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def patch(self, request, rider_id):
+        rider = get_object_or_404(RiderProfile.objects.select_related("user"), id=rider_id)
+        serializer = AdminRiderActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action = serializer.validated_data["action"]
+
+        if action == "SUSPEND_ACCOUNT":
+            has_active_delivery = Order.objects.filter(
+                rider=rider.user,
+                status__in=ACTIVE_ORDER_STATUSES,
+            ).exists()
+            has_active_trip = Ride.objects.filter(
+                rider=rider,
+                status__in=ACTIVE_RIDE_STATUSES,
+            ).exists()
+            if has_active_delivery or has_active_trip:
+                return Response(
+                    {
+                        "detail": (
+                            "This rider still has an active assignment. Complete or "
+                            "reassign it before suspending the account."
+                        )
+                    },
+                    status=409,
+                )
+            rider.user.is_active = False
+            rider.user.save(update_fields=["is_active"])
+            rider.is_online = False
+            rider.is_available = False
+            rider.save(update_fields=["is_online", "is_available"])
+        else:
+            rider.user.is_active = True
+            rider.user.save(update_fields=["is_active"])
+            rider.is_online = False
+            rider.is_available = True
+            rider.save(update_fields=["is_online", "is_available"])
+
+        return Response(envelope(rider_payload(rider), "Rider updated"))
 
 
 class AdminFinanceOverviewView(APIView):
@@ -306,6 +399,8 @@ def merchant_payloads(stores, active_only=False):
                 "status": "active" if store.is_active else "paused",
                 "zone": {"id": str(zone.id), "name": zone.name} if zone else None,
                 "is_open": store.is_open,
+                "manual_override": store.manual_override,
+                "status_reason": store.manual_override_reason,
                 "rating": float(store.rating),
                 "total_orders": delivered_orders.count(),
                 "active_orders": active_orders,
@@ -323,7 +418,9 @@ def rider_payload(rider):
     zone = zone_for_rider(rider, zones)
     completed_deliveries = Order.objects.filter(rider=rider.user, status=OrderStatus.DELIVERED).count()
     completed_trips = Ride.objects.filter(rider=rider, status=RideStatus.COMPLETED).count()
-    if not rider.is_online:
+    if not rider.user.is_active:
+        status_value = "suspended"
+    elif not rider.is_online:
         status_value = "offline"
     elif not rider.is_available:
         status_value = "busy"
@@ -345,6 +442,7 @@ def rider_payload(rider):
         "current_latitude": str(rider.current_latitude) if rider.current_latitude is not None else None,
         "current_longitude": str(rider.current_longitude) if rider.current_longitude is not None else None,
         "last_location_update_at": rider.last_location_update,
+        "account_is_active": rider.user.is_active,
     }
 
 

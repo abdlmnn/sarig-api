@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import DeliveryMethod, Order, OrderItem
+from .services import order_tracking_payload
 from apps.payments.models import PaymentMethod
 
 
@@ -61,6 +62,8 @@ class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     customer_name = serializers.ReadOnlyField(source="customer.get_full_name")
     store_name = serializers.ReadOnlyField(source="store.name")
+    store_vertical_slug = serializers.ReadOnlyField(source="store.vertical.slug")
+    tracking = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -70,8 +73,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "customer_name",
             "store",
             "store_name",
+            "store_vertical_slug",
             "rider",
             "status",
+            "delivery_method",
             "delivery_address_text",
             "delivery_latitude",
             "delivery_longitude",
@@ -83,5 +88,20 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "delivered_at",
+            "estimated_arrival_time",
+            "cancel_reason",
+            "tracking",
         ]
-        read_only_fields = ["id", "status", "created_at", "updated_at", "delivered_at"]
+        read_only_fields = [
+            "id",
+            "status",
+            "created_at",
+            "updated_at",
+            "delivered_at",
+            "estimated_arrival_time",
+            "cancel_reason",
+            "tracking",
+        ]
+
+    def get_tracking(self, order):
+        return order_tracking_payload(order)

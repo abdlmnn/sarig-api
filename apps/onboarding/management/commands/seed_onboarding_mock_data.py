@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.marketing.models import DiscountType, PromoCode
+from apps.catalog.models import Category, InventoryMode, Product, ProductType, UnitType
 from apps.onboarding.models import (
     AccountSetupToken,
     ApplicationEditToken,
@@ -24,7 +25,7 @@ from apps.onboarding.models import (
 from apps.onboarding.services import ApplicationService
 from apps.operations.models import AdminAlert, AlertSeverity, LoadStatus, ServiceZone, ServiceZoneMetricSnapshot
 from apps.operations.seed_data import MARAWI_SERVICE_ZONES
-from apps.orders.models import DeliveryMethod, Order, OrderStatus
+from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
 from apps.payments.models import PaymentMethod, PaymentStatus, PaymentTransaction
 from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
@@ -580,6 +581,57 @@ class Command(BaseCommand):
                     "status": PaymentStatus.SUCCESS if seed[3] == OrderStatus.DELIVERED else PaymentStatus.PENDING,
                 },
             )
+            self.ensure_order_items(order)
+
+    def ensure_order_items(self, order):
+        OrderItem.objects.filter(order=order).delete()
+        first_amount = (order.subtotal * Decimal("0.60")).quantize(Decimal("0.01"))
+        second_amount = order.subtotal - first_amount
+        item_names = self.order_item_names(order.store)
+        for name, amount in zip(item_names, [first_amount, second_amount], strict=False):
+            product = self.ensure_mock_product(order.store, name, amount)
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=1,
+                unit_price=amount,
+            )
+
+    def order_item_names(self, store):
+        slug = getattr(store.vertical, "slug", "")
+        if slug == "restaurant":
+            return ["Chicken Biryani", "Iced Tea"]
+        if slug == "pharmacy":
+            return ["Paracetamol 500mg", "Vitamin C Bottle"]
+        return ["Jasmine Rice 5kg", "Bottled Water Pack"]
+
+    def ensure_mock_product(self, store, name, price):
+        category, _ = Category.objects.update_or_create(
+            store=store,
+            slug="mock-order-items",
+            defaults={
+                "name": "Mock Order Items",
+                "description": "Seeded items for realistic demo orders.",
+                "is_active": True,
+                "order": 0,
+            },
+        )
+        product_type = ProductType.FOOD if getattr(store.vertical, "slug", "") == "restaurant" else ProductType.GROCERY
+        product, _ = Product.objects.update_or_create(
+            category=category,
+            slug=name.lower().replace(" ", "-"),
+            defaults={
+                "name": name,
+                "description": "Seeded item used by demo orders.",
+                "price": price,
+                "product_type": product_type,
+                "unit_type": UnitType.PIECE,
+                "inventory_mode": InventoryMode.NONE,
+                "is_available": True,
+                "is_active": True,
+            },
+        )
+        return product
 
     def seed_rides(self, riders, customers):
         if not riders or not customers:
