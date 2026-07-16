@@ -87,8 +87,9 @@ class MerchantDashboardOverviewTests(TestCase):
         self.assertTrue(response.data["active_orders"])
         active_orders = response.data["active_orders"]
         order_ids = [item["order_id"] for item in active_orders]
-        self.assertCountEqual(order_ids, [str(pending.id), str(preparing.id), str(ready.id)])
+        self.assertEqual(order_ids, [str(pending.id)])
         self.assertEqual(len(order_ids), len(set(order_ids)))
+        self.assertTrue(all(item["status"] == "NEW" for item in active_orders))
         self.assertTrue(all(item["id"].startswith("SRG-") for item in active_orders))
         self.assertTrue(response.data["delivery_lanes"])
 

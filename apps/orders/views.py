@@ -92,7 +92,7 @@ class MerchantOrderDetailView(APIView):
                 "customer",
                 "rider",
                 "rider__rider_profile",
-            ).prefetch_related("items__product"),
+            ).prefetch_related("items__product", "payment_attempts"),
             id=order_id,
             store__owner=request.user,
         )

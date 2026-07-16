@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.catalog.models import Category, InventoryMode, Product, ProductType, UnitType
 from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
+from apps.payments.models import PaymentMethod, PaymentStatus, PaymentTransaction
 from apps.riders.models import RiderProfile
 from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store, StoreDeliveryTime
@@ -128,6 +129,7 @@ class Command(BaseCommand):
         )
 
         if not options["append"]:
+            PaymentTransaction.objects.filter(order__store=store).delete()
             Order.objects.filter(store=store).delete()
             Category.objects.filter(store=store).delete()
 
@@ -319,6 +321,28 @@ class Command(BaseCommand):
                 quantity=quantity,
                 unit_price=unit_price,
             )
+
+        payment_method = rng.choice([PaymentMethod.COD, PaymentMethod.PAYMONGO])
+        if status == OrderStatus.CANCELLED:
+            payment_status = (
+                PaymentStatus.REFUNDED
+                if payment_method == PaymentMethod.PAYMONGO
+                else PaymentStatus.FAILED
+            )
+        elif payment_method == PaymentMethod.PAYMONGO or status == OrderStatus.DELIVERED:
+            payment_status = PaymentStatus.SUCCESS
+        else:
+            payment_status = PaymentStatus.PENDING
+
+        reference = f"mock_{payment_method.lower()}_{order.id}"
+        PaymentTransaction.objects.create(
+            order=order,
+            amount=order.total_amount,
+            payment_method=payment_method,
+            status=payment_status,
+            external_transaction_id=reference,
+            payment_id=f"pay_mock_{order.id}" if payment_method == PaymentMethod.PAYMONGO else None,
+        )
 
         updated_at = created_at + timedelta(minutes=rng.randint(3, 22))
         if status == OrderStatus.PREPARING and created_at <= timezone.now() - timedelta(minutes=15):
