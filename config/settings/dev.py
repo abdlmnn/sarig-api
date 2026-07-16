@@ -17,6 +17,14 @@ CORS_ALLOWED_ORIGINS = [  # noqa: F405
     ).split(",")
     if origin.strip()
 ]
+CSRF_TRUSTED_ORIGINS = [  # noqa: F405
+    origin.strip()
+    for origin in os.getenv(  # noqa: F405
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
 
 if USE_POSTGIS:  # noqa: F405
     DATABASES = {
