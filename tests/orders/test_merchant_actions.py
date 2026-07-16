@@ -106,6 +106,14 @@ class MerchantOrderActionTests(TestCase):
 
     def test_merchant_can_view_owned_order_detail(self):
         order = self._create_order(status=OrderStatus.ACCEPTED)
+        payment = PaymentTransaction.objects.create(
+            order=order,
+            amount=order.total_amount,
+            payment_method=PaymentMethod.PAYMONGO,
+            status=PaymentStatus.SUCCESS,
+            external_transaction_id="mock_detail_payment",
+            provider_raw_response={"private": "provider-data"},
+        )
         self.client.force_authenticate(user=self.merchant)
         res = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
         self.assertEqual(res.status_code, 200)
@@ -113,6 +121,11 @@ class MerchantOrderActionTests(TestCase):
         self.assertEqual(res.data["delivery_method"], order.delivery_method)
         self.assertEqual(res.data["tracking"]["customer"]["latitude"], "7.200000")
         self.assertEqual(res.data["tracking"]["store"]["longitude"], "125.400000")
+        self.assertEqual(res.data["payment"]["id"], str(payment.id))
+        self.assertEqual(res.data["payment"]["method"], PaymentMethod.PAYMONGO)
+        self.assertEqual(res.data["payment"]["status"], PaymentStatus.SUCCESS)
+        self.assertEqual(res.data["payment"]["amount"], "150.00")
+        self.assertNotIn("provider_raw_response", res.data["payment"])
 
     def test_merchant_order_list_returns_owned_active_orders(self):
         active_order = self._create_order(status=OrderStatus.ACCEPTED)

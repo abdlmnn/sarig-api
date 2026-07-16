@@ -7,6 +7,7 @@ from django.urls.exceptions import Resolver404
 from rest_framework.test import APIClient
 
 from apps.onboarding.models import ApplicationStatus, MerchantApplication, RiderApplication
+from apps.operations.services import latest_applications_payload, onboarding_summary
 
 
 def upload(name, content_type="application/pdf"):
@@ -85,6 +86,17 @@ class AdminOnboardingApiTests(TestCase):
         self.assertEqual(item["business_name"], "Sultan Food House")
         self.assertEqual(item["barangay"], "Banggolo")
         self.assertEqual(item["city"], "Marawi City")
+
+    def test_admin_dashboard_queue_includes_only_pending_applications(self):
+        payload = latest_applications_payload()
+        summary = onboarding_summary()
+
+        self.assertEqual(
+            [item["id"] for item in payload["merchant"]],
+            [self.merchant.application_id],
+        )
+        self.assertEqual(payload["rider"], [])
+        self.assertEqual(summary["ready"], 1)
 
     def test_merchant_detail_is_flat_and_includes_documents(self):
         response = self.client.get(f"/api/v1/onboarding/applications/{self.merchant.application_id}/")

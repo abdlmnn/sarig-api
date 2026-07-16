@@ -349,8 +349,12 @@ def latest_applications_payload():
     def wait_minutes(app):
         return int((timezone.now() - app.created_at).total_seconds() // 60)
 
-    merchants = MerchantApplication.objects.order_by("-created_at")[:4]
-    riders = RiderApplication.objects.order_by("-created_at")[:4]
+    merchants = MerchantApplication.objects.filter(
+        status=ApplicationStatus.PENDING
+    ).order_by("-created_at")[:4]
+    riders = RiderApplication.objects.filter(
+        status=ApplicationStatus.PENDING
+    ).order_by("-created_at")[:4]
     return {
         "merchant": [
             {

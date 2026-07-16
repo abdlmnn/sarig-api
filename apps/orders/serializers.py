@@ -64,6 +64,7 @@ class OrderSerializer(serializers.ModelSerializer):
     store_name = serializers.ReadOnlyField(source="store.name")
     store_vertical_slug = serializers.ReadOnlyField(source="store.vertical.slug")
     tracking = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -91,6 +92,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "estimated_arrival_time",
             "cancel_reason",
             "tracking",
+            "payment",
         ]
         read_only_fields = [
             "id",
@@ -101,7 +103,23 @@ class OrderSerializer(serializers.ModelSerializer):
             "estimated_arrival_time",
             "cancel_reason",
             "tracking",
+            "payment",
         ]
 
     def get_tracking(self, order):
         return order_tracking_payload(order)
+
+    def get_payment(self, order):
+        payment = order.payment_attempts.first()
+        if not payment:
+            return None
+        return {
+            "id": str(payment.id),
+            "method": payment.payment_method,
+            "method_label": payment.get_payment_method_display(),
+            "status": payment.status,
+            "status_label": payment.get_status_display(),
+            "amount": str(payment.amount),
+            "reference": payment.external_transaction_id or "",
+            "updated_at": payment.updated_at.isoformat(),
+        }
