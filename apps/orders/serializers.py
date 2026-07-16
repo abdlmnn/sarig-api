@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import DeliveryMethod, Order, OrderItem
+from .services import order_tracking_payload
 from apps.payments.models import PaymentMethod
 
 
@@ -61,6 +62,8 @@ class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     customer_name = serializers.ReadOnlyField(source="customer.get_full_name")
     store_name = serializers.ReadOnlyField(source="store.name")
+    store_vertical_slug = serializers.ReadOnlyField(source="store.vertical.slug")
+    tracking = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -70,8 +73,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "customer_name",
             "store",
             "store_name",
+            "store_vertical_slug",
             "rider",
             "status",
+            "delivery_method",
             "delivery_address_text",
             "delivery_latitude",
             "delivery_longitude",
@@ -83,42 +88,20 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "delivered_at",
-        ]
-        read_only_fields = ["id", "status", "created_at", "updated_at", "delivered_at"]
-
-
-class MerchantOrderDetailSerializer(OrderSerializer):
-    tracking = serializers.SerializerMethodField()
-
-    class Meta(OrderSerializer.Meta):
-        fields = OrderSerializer.Meta.fields + [
-            "delivery_method",
             "estimated_arrival_time",
+            "cancel_reason",
+            "tracking",
+        ]
+        read_only_fields = [
+            "id",
+            "status",
+            "created_at",
+            "updated_at",
+            "delivered_at",
+            "estimated_arrival_time",
+            "cancel_reason",
             "tracking",
         ]
 
     def get_tracking(self, order):
-        rider_profile = getattr(order.rider, "rider_profile", None) if order.rider else None
-        rider = None
-        if (
-            rider_profile
-            and rider_profile.current_latitude is not None
-            and rider_profile.current_longitude is not None
-        ):
-            rider = {
-                "latitude": str(rider_profile.current_latitude),
-                "longitude": str(rider_profile.current_longitude),
-                "last_updated_at": rider_profile.last_location_update.isoformat(),
-            }
-
-        return {
-            "store": {
-                "latitude": str(order.store.latitude),
-                "longitude": str(order.store.longitude),
-            },
-            "customer": {
-                "latitude": str(order.delivery_latitude),
-                "longitude": str(order.delivery_longitude),
-            },
-            "rider": rider,
-        }
+        return order_tracking_payload(order)

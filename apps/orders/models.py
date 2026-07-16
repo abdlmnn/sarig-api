@@ -71,6 +71,7 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
     estimated_arrival_time = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-created_at"]

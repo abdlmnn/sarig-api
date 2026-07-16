@@ -2,8 +2,8 @@ services:
   api:
     build: .
     command: >
-      sh -c "python manage.py migrate --settings=${DJANGO_SETTINGS_MODULE} &&
-             python manage.py collectstatic --noinput --settings=${DJANGO_SETTINGS_MODULE} &&
+      sh -c "python manage.py migrate --settings=$${DJANGO_SETTINGS_MODULE} &&
+             python manage.py collectstatic --noinput --settings=$${DJANGO_SETTINGS_MODULE} &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
     volumes:
       - static_volume:/app/staticfiles
@@ -12,19 +12,30 @@ services:
       - .env
     environment:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.prod}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      USE_POSTGIS: "1"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     expose:
       - "8000"
     restart: unless-stopped
 
   db:
-    image: postgres:15
+    image: postgis/postgis:15-3.4
     restart: always
-    env_file:
-      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-delivery_app}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     expose:
       - "5432"
 

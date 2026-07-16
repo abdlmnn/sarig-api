@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.common.validators import validate_image_upload
-from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductType, ModifierGroup, ModifierItem
+from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductReference, ProductType, ModifierGroup, ModifierItem
 
 
 class ModifierItemSerializer(serializers.ModelSerializer):
@@ -66,6 +66,32 @@ class CategoryTemplateSerializer(serializers.ModelSerializer):
         }
 
 
+class ProductReferenceSerializer(serializers.ModelSerializer):
+    vertical = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductReference
+        fields = [
+            "id",
+            "vertical",
+            "name",
+            "brand_name",
+            "barcode",
+            "description",
+            "product_type",
+            "unit_type",
+            "is_active",
+            "source",
+        ]
+
+    def get_vertical(self, obj):
+        return {
+            "id": str(obj.vertical_id),
+            "name": obj.vertical.name,
+            "slug": obj.vertical.slug,
+        }
+
+
 class ProductSerializer(serializers.ModelSerializer):
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
     in_stock = serializers.ReadOnlyField()
@@ -118,6 +144,10 @@ class ProductSerializer(serializers.ModelSerializer):
         product_type = attrs.get("product_type", getattr(self.instance, "product_type", ProductType.GENERAL))
         inventory_mode = attrs.get("inventory_mode", getattr(self.instance, "inventory_mode", InventoryMode.NONE))
         stock_quantity = attrs.get("stock_quantity", getattr(self.instance, "stock_quantity", None))
+        low_stock_threshold = attrs.get(
+            "low_stock_threshold",
+            getattr(self.instance, "low_stock_threshold", 5),
+        )
         requires_prescription = attrs.get(
             "requires_prescription",
             getattr(self.instance, "requires_prescription", False),
@@ -147,6 +177,10 @@ class ProductSerializer(serializers.ModelSerializer):
         if inventory_mode == InventoryMode.SIMPLE_STOCK and stock_quantity is None:
             raise serializers.ValidationError(
                 {"stock_quantity": "Stock quantity is required when inventory_mode is simple_stock."}
+            )
+        if low_stock_threshold is None or low_stock_threshold < 0:
+            raise serializers.ValidationError(
+                {"low_stock_threshold": "Low stock threshold must be 0 or higher."}
             )
         if inventory_mode == InventoryMode.NONE:
             attrs["stock_quantity"] = None

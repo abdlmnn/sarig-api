@@ -72,6 +72,41 @@ class CategoryTemplate(models.Model):
         return f"{self.name} ({self.vertical.slug})"
 
 
+class ProductReference(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vertical = models.ForeignKey(
+        BusinessVertical,
+        on_delete=models.CASCADE,
+        related_name="product_references",
+    )
+    name = models.CharField(max_length=255)
+    brand_name = models.CharField(max_length=255, blank=True)
+    barcode = models.CharField(max_length=80, blank=True, db_index=True)
+    description = models.TextField(blank=True)
+    product_type = models.CharField(
+        max_length=20,
+        choices=ProductType.choices,
+        default=ProductType.GROCERY,
+        db_index=True,
+    )
+    unit_type = models.CharField(max_length=20, choices=UnitType.choices, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    source = models.CharField(max_length=80, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["vertical__slug", "name", "brand_name"]
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["brand_name"]),
+            models.Index(fields=["barcode"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.vertical.slug})"
+
+
 class Product(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     category = models.ForeignKey(

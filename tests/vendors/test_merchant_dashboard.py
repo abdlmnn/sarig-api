@@ -187,8 +187,7 @@ class MerchantDashboardOverviewTests(TestCase):
 
         response = self.client.get("/api/v1/orders/merchant/?status=ALL")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["orders"], [])
+        self.assertEqual(response.status_code, 404)
 
     def test_merchant_can_close_store_temporarily(self):
         self.client.force_authenticate(self.merchant)
