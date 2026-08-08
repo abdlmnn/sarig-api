@@ -40,6 +40,30 @@ class LocationApiTests(TestCase):
         self.assertEqual(params["bias"], "proximity:124.283900,8.003400")
 
     @patch("apps.locations.services.requests.get")
+    def test_search_excludes_results_outside_marawi(self, mock_get):
+        mock_get.return_value.json.return_value = {
+            "features": [
+                {
+                    "properties": {
+                        "formatted": "Manila City Hall",
+                        "lat": 14.5906,
+                        "lon": 120.9817,
+                        "city": "Manila",
+                    }
+                }
+            ]
+        }
+        mock_get.return_value.raise_for_status.return_value = None
+
+        response = self.client.get(
+            "/api/v1/locations/search/",
+            {"q": "City Hall"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"], [])
+
+    @patch("apps.locations.services.requests.get")
     def test_reverse_returns_readable_address(self, mock_get):
         mock_get.return_value.json.return_value = {
             "features": [

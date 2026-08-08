@@ -14,6 +14,10 @@ from .views import (
     ProductManagementDetailView,
     ProductManagementListView,
     ProductReferenceViewSet,
+    PublicStoreDetailView,
+    PublicStoreDiscoveryView,
+    PublicStoreListView,
+    PublicStoreProductsView,
     ProductViewSet,
 )
 
@@ -34,5 +38,9 @@ urlpatterns = [
     path("products/manage/<uuid:product_id>/", ProductManagementDetailView.as_view(), name="catalog-product-management-detail"),
     path("search/", GlobalProductSearchView.as_view(), name="global-search"),
     path("compare/", ProductComparisonView.as_view(), name="product-compare"),
+    path("stores/discovery/", PublicStoreDiscoveryView.as_view(), name="public-store-discovery"),
+    path("stores/", PublicStoreListView.as_view(), name="public-store-list"),
+    path("stores/<slug:store_identifier>/", PublicStoreDetailView.as_view(), name="public-store-detail"),
+    path("stores/<slug:store_identifier>/products/", PublicStoreProductsView.as_view(), name="public-store-products"),
     path("", include(router.urls)),
 ]

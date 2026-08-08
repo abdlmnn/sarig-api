@@ -8,6 +8,7 @@ from django.db.models import Avg
 from django.utils import timezone
 from rest_framework import permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,7 +16,12 @@ from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from .models import Store, BusinessVertical
-from .serializers import StoreSerializer, BusinessVerticalSerializer, StoreStatusUpdateSerializer
+from .serializers import (
+    BusinessVerticalSerializer,
+    StoreBrandingSerializer,
+    StoreSerializer,
+    StoreStatusUpdateSerializer,
+)
 from .permissions import IsMerchantOrAdmin
 from .utils import PH_TZ, store_availability_payload
 
@@ -164,7 +170,7 @@ class NearbyStoresView(APIView):
                 "distance_km": round(distance, 2),
                 "rating": round(avg_rating, 1),
                 "is_open": store.is_open,
-                "logo": store.image.url if store.image else None,
+                "logo": store.logo_image.url if store.logo_image else None,
             })
 
         # Ensure stable ordering when fallback path is used.
@@ -181,6 +187,14 @@ class MerchantDashboardOverviewView(APIView):
         stores = list(request.user.stores.select_related("vertical").filter(is_active=True).order_by("name"))
         if not stores:
             return Response({"detail": "No active store found for this merchant."}, status=404)
+        if any(not store.logo_image for store in stores):
+            return Response(
+                {
+                    "code": "STORE_LOGO_REQUIRED",
+                    "detail": "Add a logo for every active store before opening the dashboard.",
+                },
+                status=428,
+            )
 
         primary_store = stores[0]
         availability = store_availability_payload(primary_store, timezone.now().astimezone(PH_TZ))
@@ -224,3 +238,43 @@ class MerchantStoreStatusView(APIView):
                 **availability,
             }
         )
+
+
+class MerchantStoreBrandingListView(APIView):
+    permission_classes = [IsMerchant]
+    throttle_scope = "search"
+
+    def get(self, request):
+        stores = request.user.stores.filter(is_active=True).order_by("name")
+        return Response(
+            {
+                "stores": StoreBrandingSerializer(
+                    stores,
+                    many=True,
+                    context={"request": request},
+                ).data
+            }
+        )
+
+
+class MerchantStoreBrandingDetailView(APIView):
+    permission_classes = [IsMerchant]
+    parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = "search"
+
+    def patch(self, request, store_id):
+        store = request.user.stores.filter(id=store_id, is_active=True).first()
+        if not store:
+            return Response(
+                {"detail": "Store not found."},
+                status=404,
+            )
+        serializer = StoreBrandingSerializer(
+            store,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

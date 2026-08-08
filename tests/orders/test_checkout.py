@@ -24,6 +24,8 @@ class CheckoutFlowTests(TestCase):
         self.customer = User.objects.create_user(
             username="customer1", email="customer1@test.com", password="pw12345"
         )
+        customer_role, _ = Role.objects.get_or_create(name="Customer")
+        self.customer.roles.add(customer_role)
         self.merchant = User.objects.create_user(
             username="merchant1", email="merchant1@test.com", password="pw12345"
         )

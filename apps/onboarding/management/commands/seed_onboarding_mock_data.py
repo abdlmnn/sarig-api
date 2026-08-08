@@ -1,7 +1,9 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -65,6 +67,9 @@ MERCHANT_SEEDS = [
     ("Sajid Coffee Corner", "Aina", "Sambitory", "merchant8@sarig.local", "+63 917-110-1008", BusinessType.RESTAURANT, DeliveryTime.MORNING, "Campus Side", "Rapasun MSU", "University Avenue", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
     ("Bai Essentials", "Maryam", "Lidasan", "merchant9@sarig.local", "+63 917-110-1009", BusinessType.SHOP, DeliveryTime.ALL_DAY, "Retail Booth", "Lilod Madaya", "Main Access Road", LocationSource.MANUAL, ApplicationStatus.REQUEST_CHANGES, "Please resubmit DTI certificate with a complete page scan.", ["dti_sec_certificate"]),
     ("Panggao Seafood Grill", "Ismael", "Pangandaman", "merchant10@sarig.local", "+63 917-110-1010", BusinessType.RESTAURANT, DeliveryTime.EVENING, "Lakeside Grill", "Marinaut West", "Lakeside Drive", LocationSource.PIN, ApplicationStatus.PENDING, "", []),
+    ("Ranaw Grill and Kitchen", "Salma", "Macapaar", "merchant11@sarig.local", "+63 917-110-1011", BusinessType.RESTAURANT, DeliveryTime.ALL_DAY, "Poblacion Branch", "Poblacion Core", "Quezon Avenue", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
+    ("Mapandi Cafe and Meals", "Omar", "Disomangcop", "merchant12@sarig.local", "+63 917-110-1012", BusinessType.RESTAURANT, DeliveryTime.ALL_DAY, "Matampay Branch", "Matampay", "Governor Gutierrez Avenue", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
+    ("Lake Lanao Chicken House", "Norhata", "Mala", "merchant13@sarig.local", "+63 917-110-1013", BusinessType.RESTAURANT, DeliveryTime.EVENING, "Marinaut Branch", "Marinaut West", "Lakeside Drive", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
 ]
 
 RIDER_SEEDS = [
@@ -91,6 +96,9 @@ MERCHANT_APPLICATION_IDS = [
     "MR-8690",
     "MR-9706",
     "MR-1812",
+    "MR-2928",
+    "MR-3044",
+    "MR-4160",
 ]
 
 RIDER_APPLICATION_IDS = [
@@ -123,6 +131,8 @@ class Command(BaseCommand):
             merchant_apps = self.seed_merchants(admin_user)
             rider_apps = self.seed_riders(admin_user)
             stores = self.materialize_approved_merchants(merchant_apps)
+            self.seed_store_branding(stores)
+            self.seed_marketplace_products(stores)
             riders = self.materialize_approved_riders(rider_apps)
             customers = self.ensure_customers()
             promo_codes = self.ensure_promo_codes()
@@ -449,6 +459,28 @@ class Command(BaseCommand):
                 stores.append(ApplicationService.create_store_for_merchant(app))
         return stores
 
+    def seed_store_branding(self, stores):
+        store = next(
+            (item for item in stores if item.name == "Ranaw Grill and Kitchen"),
+            None,
+        )
+        if not store:
+            return
+
+        fixture_dir = settings.BASE_DIR / "data" / "store-branding"
+        updates = []
+        for field, filename in (
+            ("logo_image", "ranaw-grill-logo.png"),
+            ("banner_image", "ranaw-grill-banner.png"),
+        ):
+            if getattr(store, field):
+                continue
+            with (fixture_dir / filename).open("rb") as source:
+                getattr(store, field).save(filename, File(source), save=False)
+            updates.append(field)
+        if updates:
+            store.save(update_fields=[*updates, "updated_at"])
+
     def materialize_approved_riders(self, applications):
         profiles = []
         User = get_user_model()
@@ -491,6 +523,13 @@ class Command(BaseCommand):
             profile.save()
             profiles.append(profile)
         return profiles
+
+    def seed_marketplace_products(self, stores):
+        for store in stores:
+            if getattr(store.vertical, "slug", "") != "restaurant":
+                continue
+            self.ensure_mock_product(store, "Chicken Biryani", Decimal("160.00"))
+            self.ensure_mock_product(store, "Iced Tea", Decimal("35.00"))
 
     def ensure_customers(self):
         User = get_user_model()

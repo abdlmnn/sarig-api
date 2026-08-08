@@ -11,7 +11,7 @@ from rest_framework_simplejwt.token_blacklist.models import (
 from .models import User
 
 
-ACCOUNT_SCOPES = ("ADMIN", "MERCHANT")
+ACCOUNT_SCOPES = ("ADMIN", "MERCHANT", "CUSTOMER")
 
 
 def cookie_name(account_type):
@@ -23,6 +23,8 @@ def refresh_lifetime(account_type, remember_me):
         return timedelta(hours=settings.AUTH_SESSION_REFRESH_HOURS)
     if account_type == "ADMIN":
         return timedelta(days=settings.AUTH_ADMIN_REMEMBER_DAYS)
+    if account_type == "CUSTOMER":
+        return timedelta(days=settings.AUTH_CUSTOMER_REMEMBER_DAYS)
     return timedelta(days=settings.AUTH_MERCHANT_REMEMBER_DAYS)
 
 
@@ -62,6 +64,8 @@ def user_has_scope(user, account_type):
         return bool(user.is_superuser and user.is_staff)
     if account_type == "MERCHANT":
         return bool(user.is_merchant and not user.is_superuser)
+    if account_type == "CUSTOMER":
+        return bool(user.is_customer and not user.is_superuser)
     return False
 
 

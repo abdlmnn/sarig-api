@@ -96,7 +96,17 @@ class GeoapifyService:
             timeout=_timeout(),
         )
         response.raise_for_status()
-        return [cls._feature_to_location(feature) for feature in response.json().get("features", [])]
+        results = [
+            cls._feature_to_location(feature)
+            for feature in response.json().get("features", [])
+        ]
+        return [
+            result
+            for result in results
+            if result["latitude"] is not None
+            and result["longitude"] is not None
+            and is_inside_marawi(result["latitude"], result["longitude"])
+        ]
 
     @classmethod
     def reverse(cls, latitude, longitude):

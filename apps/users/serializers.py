@@ -172,6 +172,13 @@ class MerchantLoginSerializer(RoleAwareLoginSerializer):
     required_scope = "MERCHANT"
 
 
+class CustomerLoginSerializer(RoleAwareLoginSerializer):
+    required_scope = "CUSTOMER"
+
+    def is_allowed(self, user):
+        return bool(user.is_customer and not user.is_superuser)
+
+
 class LegacyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
@@ -209,6 +216,7 @@ class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
         fields = "__all__"
+        read_only_fields = ("id", "user")
         read_only_fields = ("user",)
 
     def create(self, validated_data):

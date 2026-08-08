@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 
 from apps.onboarding.models import ApplicationStatus, MerchantApplication, RiderApplication
 from apps.operations.services import latest_applications_payload, onboarding_summary
+from apps.vendors.models import BusinessVertical
 
 
 def upload(name, content_type="application/pdf"):
@@ -116,6 +117,53 @@ class AdminOnboardingApiTests(TestCase):
             document["view_url"],
             f"/api/v1/onboarding/applications/{self.merchant.application_id}/documents/dti_sec_certificate/",
         )
+        document_keys = {item["key"] for item in response.data["documents"]}
+        self.assertNotIn("pharmacy_license", document_keys)
+
+    def test_pharmacy_detail_includes_business_category_and_required_license(self):
+        pharmacy, _ = BusinessVertical.objects.update_or_create(
+            slug="pharmacy",
+            defaults={
+                "name": "Pharmacy",
+                "allowed_product_types": ["medicine", "grocery", "general"],
+                "requires_license": True,
+                "required_documents": ["mayors_permit", "pharmacy_license"],
+            },
+        )
+        merchant = MerchantApplication.objects.create(
+            business_name="Sarig Pharmacy",
+            owner_first_name="Amina",
+            owner_last_name="Santos",
+            company_email="pharmacy@example.com",
+            contact_number="+63 917 420 1199",
+            business_type="SHOP",
+            business_vertical=pharmacy,
+            delivery_time="ALL_DAY",
+            branch_name="Main",
+            terms_accepted=True,
+            business_address="Amai Pakpak Avenue",
+            street="Amai Pakpak Avenue",
+            barangay="Banggolo",
+            city="Marawi",
+            province="Lanao del Sur",
+            postal_code="9700",
+            latitude="8.003400",
+            longitude="124.283900",
+            dti_sec_certificate=upload("Pharmacy-DTI.pdf"),
+            mayors_permit=upload("Pharmacy-Mayors-Permit.pdf"),
+            owner_valid_id=upload("Amina-ID.pdf"),
+            storefront_photo=upload("Pharmacy-Storefront.jpg", "image/jpeg"),
+            pharmacy_license=upload("Pharmacy-License.pdf"),
+            status=ApplicationStatus.PENDING,
+        )
+
+        response = self.client.get(f"/api/v1/onboarding/applications/{merchant.application_id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["business_vertical_name"], "Pharmacy")
+        document = next(item for item in response.data["documents"] if item["key"] == "pharmacy_license")
+        self.assertEqual(document["label"], "Pharmacy License / FDA LTO")
+        self.assertTrue(document["required"])
 
     def test_rider_detail_is_flat_and_includes_documents(self):
         response = self.client.get(f"/api/v1/onboarding/applications/{self.rider.application_id}/")

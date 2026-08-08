@@ -69,3 +69,13 @@ class MerchantSignupLocationTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("coordinates", response.data)
+
+    def test_merchant_apply_rejects_pdf_storefront_photo(self):
+        response = self.client.post(
+            "/api/v1/onboarding/merchant/apply/",
+            merchant_payload(storefront_photo=upload("storefront.pdf")),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("storefront_photo", response.data)

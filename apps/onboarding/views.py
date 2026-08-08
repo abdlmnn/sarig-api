@@ -45,9 +45,9 @@ MERCHANT_DOCUMENT_META = {
     "mayors_permit": ("Mayor's Permit", True),
     "bir_cor": ("BIR COR", False),
     "owner_valid_id": ("Owner Valid ID", True),
-    "storefront_photo": ("Storefront Photo", True),
-    "pharmacy_license": ("Pharmacy License", False),
+    "storefront_photo": ("Physical Store Photo", True),
 }
+PHARMACY_LICENSE_DOCUMENT_META = ("Pharmacy License / FDA LTO", True)
 RIDER_DOCUMENT_META = {
     "professional_drivers_license": ("Professional Driver's License", True),
     "lto_or_cr": ("LTO OR/CR", False),
@@ -80,6 +80,8 @@ def document_meta(application):
     required_documents = []
     if application.business_vertical_id:
         required_documents = application.business_vertical.required_documents or []
+    if "pharmacy_license" in required_documents or application.pharmacy_license:
+        meta["pharmacy_license"] = PHARMACY_LICENSE_DOCUMENT_META
     for key in required_documents:
         if key in meta:
             label, _ = meta[key]
@@ -191,6 +193,8 @@ def merchant_detail_payload(application):
         "company_email": application.company_email,
         "contact_number": application.contact_number,
         "business_type": application.get_business_type_display(),
+        "business_vertical_slug": application.business_vertical.slug if application.business_vertical_id else None,
+        "business_vertical_name": application.business_vertical.name if application.business_vertical_id else None,
         "delivery_time": delivery_time_map.get(application.delivery_time, application.delivery_time.lower()),
         "branch_name": application.branch_name,
         "business_address": application.business_address,
@@ -337,7 +341,7 @@ class MerchantOnboardingOptionsView(APIView):
                         {"key": "dti_sec_certificate", "label": "DTI / SEC Certificate"},
                         {"key": "mayors_permit", "label": "Mayor's Permit / Business Permit"},
                         {"key": "owner_valid_id", "label": "Owner Valid ID"},
-                        {"key": "storefront_photo", "label": "Storefront Photo"},
+                        {"key": "storefront_photo", "label": "Physical Store Photo"},
                     ],
                     "base_optional": [
                         {"key": "bir_cor", "label": "BIR COR"},
