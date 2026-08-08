@@ -1,6 +1,7 @@
 import uuid
 import logging
 from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from apps.vendors.models import Store
 from apps.catalog.models import Product
@@ -123,3 +124,59 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.quantity}x {self.product.name} (Order {str(self.order.id)[:8]})"
+
+
+class CustomerCart(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="store_carts",
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="customer_carts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["customer", "store"],
+                name="unique_customer_store_cart",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.customer_id} - {self.store.name}"
+
+
+class CustomerCartItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    cart = models.ForeignKey(
+        CustomerCart,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(99)]
+    )
+    special_instructions = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cart", "product"],
+                name="unique_product_per_customer_cart",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.quantity}x {self.product.name}"

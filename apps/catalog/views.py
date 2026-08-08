@@ -1,7 +1,20 @@
 from decimal import Decimal
+from uuid import UUID
 
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Avg, Count, F, Max, Q
+from django.db.models import (
+    Case,
+    Count,
+    F,
+    IntegerField,
+    Max,
+    Min,
+    Prefetch,
+    Q,
+    Value,
+    When,
+)
 from django.utils.text import slugify
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -10,6 +23,7 @@ from rest_framework.views import APIView
 
 from apps.onboarding.models import ApplicationStatus, MerchantApplication
 from apps.onboarding.services import ApplicationService
+from apps.locations.services import calculate_delivery_fee
 from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
@@ -222,7 +236,7 @@ def product_payload(product, request):
         "stock_status": stock_status,
         "availability_status": "AVAILABLE" if product.is_available and product.is_active else "UNAVAILABLE",
         "is_available": product.is_available,
-        "image_url": request.build_absolute_uri(product.image.url) if product.image else "",
+        "image_url": product_image_url(product, request),
         "sku": product.sku or "",
         "product_type": product.product_type,
         "generic_name": product.generic_name or "",
@@ -233,6 +247,28 @@ def product_payload(product, request):
         "medicine_reference": str(product.medicine_reference_id) if product.medicine_reference_id else "",
         "preparation_time_minutes": product.preparation_time_minutes,
         "updated_at": product.updated_at.isoformat(),
+    }
+
+
+def product_image_url(product, request):
+    if not product.image:
+        return ""
+
+    try:
+        return request.build_absolute_uri(product.image.url)
+    except ValueError:
+        return ""
+
+
+def mutable_request_data(data):
+    if hasattr(data, "dict"):
+        normalized = data.dict()
+    else:
+        normalized = dict(data)
+    return {
+        key: value
+        for key, value in normalized.items()
+        if value not in (None, "")
     }
 
 
@@ -576,7 +612,7 @@ class ProductManagementListView(APIView):
         if not category:
             return Response({"category": "Select a valid category for this store."}, status=400)
 
-        data = request.data.copy()
+        data = mutable_request_data(request.data)
         data["category"] = str(category.id)
         data["product_type"] = data.get("product_type") or "food"
         data["inventory_mode"] = data.get("inventory_mode") or "none"
@@ -585,7 +621,7 @@ class ProductManagementListView(APIView):
             data["product_type"] = "food"
             data["inventory_mode"] = "none"
             data["track_inventory"] = False
-            data["stock_quantity"] = None
+            data.pop("stock_quantity", None)
 
         name = str(data.get("name", "")).strip()
         if name and not data.get("slug"):
@@ -628,7 +664,7 @@ class ProductManagementDetailView(APIView):
         if not product:
             return Response({"detail": "Product not found."}, status=404)
 
-        data = request.data.copy()
+        data = mutable_request_data(request.data)
         category_id = data.get("category")
         if category_id:
             category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
@@ -642,7 +678,7 @@ class ProductManagementDetailView(APIView):
             data["product_type"] = "food"
             data["inventory_mode"] = "none"
             data["track_inventory"] = False
-            data["stock_quantity"] = None
+            data.pop("stock_quantity", None)
 
         serializer = ProductSerializer(product, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -726,57 +762,642 @@ class GlobalProductSearchView(APIView):
     throttle_scope = "search"
 
     def get(self, request):
-        query = request.query_params.get("q", "")
-        lat = request.query_params.get("lat")
-        lng = request.query_params.get("lng")
-        has_location = lat not in (None, "") or lng not in (None, "")
+        filters, error = self.parse_filters(request)
+        if error:
+            return error
 
-        if has_location:
-            if not lat or not lng:
-                return Response({"error": "Latitude and longitude must be provided together."}, status=400)
-            try:
-                lat_f = float(lat)
-                lng_f = float(lng)
-            except (TypeError, ValueError):
-                return Response({"error": "Invalid latitude/longitude values."}, status=400)
-            if not (-90 <= lat_f <= 90) or not (-180 <= lng_f <= 180):
-                return Response({"error": "Latitude/longitude out of valid range."}, status=400)
-        
-        # 1. Search Products
-        products = Product.objects.select_related('category__store', 'category').filter(
-            Q(name__icontains=query) | Q(description__icontains=query),
-            is_active=True,
-            is_available=True
+        products = self.product_queryset(filters)
+        facets = {
+            "verticals": self.vertical_facets(),
+            "categories": self.category_facets(filters["vertical"]),
+        }
+        total_items = products.count()
+        start = (filters["page"] - 1) * filters["page_size"]
+        end = start + filters["page_size"]
+
+        if filters["sort"] == "nearest":
+            results = [
+                self.result_payload(product, request, filters)
+                for product in products
+            ]
+            results.sort(
+                key=lambda item: (
+                    not item["store"]["is_open"],
+                    item["distance_km"] is None,
+                    item["distance_km"] or 0,
+                    item["name"],
+                )
+            )
+            page_results = results[start:end]
+        else:
+            page_results = [
+                self.result_payload(product, request, filters)
+                for product in products[start:end]
+            ]
+
+        total_pages = max(1, (total_items + filters["page_size"] - 1) // filters["page_size"])
+
+        return Response(
+            {
+                "results": page_results,
+                "facets": facets,
+                "pagination": {
+                    "page": filters["page"],
+                    "page_size": filters["page_size"],
+                    "total_items": total_items,
+                    "total_pages": total_pages,
+                    "has_next": filters["page"] < total_pages,
+                    "has_previous": filters["page"] > 1,
+                },
+            }
         )
 
-        results = []
-        for product in products:
-            store = product.category.store
-            distance = None
-            
-            # 2. Calculate Distance if user location provided
-            if has_location:
-                store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
-                distance = RiderDispatcherService.haversine(
-                    lng_f, lat_f,
-                    float(store_lng), float(store_lat)
+    def parse_filters(self, request):
+        query = request.query_params.get("q", "").strip()[:120]
+        lat = request.query_params.get("lat")
+        lng = request.query_params.get("lng")
+        location, error = self.parse_location(lat, lng)
+        if error:
+            return None, error
+
+        try:
+            min_price = self.parse_price(request.query_params.get("min_price"))
+            max_price = self.parse_price(request.query_params.get("max_price"))
+            page = max(1, int(request.query_params.get("page", 1)))
+            page_size = min(48, max(1, int(request.query_params.get("page_size", 24))))
+        except (TypeError, ValueError):
+            return None, Response(
+                {"error": "Price and pagination filters must be valid numbers."},
+                status=400,
+            )
+
+        if min_price is not None and max_price is not None and min_price > max_price:
+            return None, Response(
+                {"error": "Minimum price cannot be greater than maximum price."},
+                status=400,
+            )
+
+        sort = request.query_params.get("sort", "relevance")
+        allowed_sorts = {"relevance", "nearest", "price_low", "price_high", "rating"}
+        if sort not in allowed_sorts:
+            return None, Response({"error": "Invalid sort option."}, status=400)
+        if sort == "nearest" and not location:
+            sort = "relevance"
+
+        return {
+            "query": query,
+            "vertical": request.query_params.get("vertical", "").strip(),
+            "category": request.query_params.get("category", "").strip(),
+            "min_price": min_price,
+            "max_price": max_price,
+            "sort": sort,
+            "location": location,
+            "page": page,
+            "page_size": page_size,
+        }, None
+
+    @staticmethod
+    def parse_price(value):
+        if value in (None, ""):
+            return None
+        amount = Decimal(value)
+        if amount < 0:
+            raise ValueError
+        return amount
+
+    @staticmethod
+    def parse_location(lat, lng):
+        if lat in (None, "") and lng in (None, ""):
+            return None, None
+        if not lat or not lng:
+            return None, Response(
+                {"error": "Latitude and longitude must be provided together."},
+                status=400,
+            )
+        try:
+            latitude = float(lat)
+            longitude = float(lng)
+        except (TypeError, ValueError):
+            return None, Response(
+                {"error": "Invalid latitude/longitude values."},
+                status=400,
+            )
+        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+            return None, Response(
+                {"error": "Latitude/longitude out of valid range."},
+                status=400,
+            )
+        return (latitude, longitude), None
+
+    @staticmethod
+    def base_queryset():
+        return Product.objects.select_related(
+            "category",
+            "category__store",
+            "category__store__vertical",
+        ).filter(
+            is_active=True,
+            is_available=True,
+            category__is_active=True,
+            category__store__is_active=True,
+            category__store__vertical__is_active=True,
+        ).filter(
+            Q(track_inventory=False) | Q(stock_quantity__gt=0)
+        )
+
+    def product_queryset(self, filters):
+        products = self.base_queryset()
+        query = filters["query"]
+        if query:
+            products = products.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(brand_name__icontains=query)
+                | Q(generic_name__icontains=query)
+                | Q(category__store__name__icontains=query)
+            )
+        if filters["vertical"]:
+            products = products.filter(
+                category__store__vertical__slug=filters["vertical"]
+            )
+        if filters["category"]:
+            products = products.filter(category__slug=filters["category"])
+        if filters["min_price"] is not None:
+            products = products.filter(price__gte=filters["min_price"])
+        if filters["max_price"] is not None:
+            products = products.filter(price__lte=filters["max_price"])
+        ordering = {
+            "relevance": ("name", "price"),
+            "price_low": ("price", "name"),
+            "price_high": ("-price", "name"),
+            "rating": ("-category__store__rating", "name"),
+            "nearest": ("name",),
+        }
+        effective_open = Case(
+            When(
+                category__store__is_open=True,
+                category__store__manual_override__isnull=True,
+                then=Value(0),
+            ),
+            When(
+                category__store__is_open=True,
+                category__store__manual_override__in=["", "OPEN_NOW"],
+                then=Value(0),
+            ),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        return products.order_by(
+            effective_open,
+            *ordering[filters["sort"]],
+        )
+
+    def vertical_facets(self):
+        rows = (
+            self.base_queryset()
+            .values(
+                "category__store__vertical__name",
+                "category__store__vertical__slug",
+            )
+            .annotate(product_count=Count("id"))
+            .order_by("category__store__vertical__name")
+        )
+        return [
+            {
+                "name": row["category__store__vertical__name"],
+                "slug": row["category__store__vertical__slug"],
+                "product_count": row["product_count"],
+            }
+            for row in rows
+        ]
+
+    def category_facets(self, vertical):
+        products = self.base_queryset()
+        if vertical:
+            products = products.filter(
+                category__store__vertical__slug=vertical
+            )
+        rows = (
+            products
+            .exclude(category__slug="")
+            .values("category__name", "category__slug")
+            .annotate(product_count=Count("id"))
+            .order_by("category__name")
+        )
+        return [
+            {
+                "name": row["category__name"],
+                "slug": row["category__slug"],
+                "product_count": row["product_count"],
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def result_payload(product, request, filters):
+        store = product.category.store
+        distance = None
+        if filters["location"]:
+            latitude, longitude = filters["location"]
+            store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
+            distance = RiderDispatcherService.haversine(
+                longitude,
+                latitude,
+                float(store_lng),
+                float(store_lat),
+            )
+
+        return {
+            "id": str(product.id),
+            "name": product.name,
+            "description": product.description or "",
+            "price": float(product.price),
+            "image": product_image_url(product, request),
+            "product_type": product.product_type,
+            "unit_type": product.unit_type,
+            "brand_name": product.brand_name or "",
+            "generic_name": product.generic_name or "",
+            "dosage": product.dosage or "",
+            "requires_prescription": product.requires_prescription,
+            "preparation_time_minutes": product.preparation_time_minutes,
+            "category": {
+                "name": product.category.name,
+                "slug": product.category.slug,
+            },
+            "store": {
+                "id": str(store.id),
+                "name": store.name,
+                "vertical": {
+                    "name": store.vertical.name,
+                    "slug": store.vertical.slug,
+                },
+                "rating": float(store.rating),
+                "is_open": store.is_open
+                and store.manual_override not in {
+                    "CLOSED_TEMPORARILY",
+                    "PAUSED_ORDERS",
+                },
+                "barangay": store.barangay,
+                "city": store.city,
+            },
+            "distance_km": round(distance, 2) if distance is not None else None,
+        }
+
+
+class PublicStoreListView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "search"
+
+    def get(self, request):
+        location, error = GlobalProductSearchView.parse_location(
+            request.query_params.get("lat"),
+            request.query_params.get("lng"),
+        )
+        if error:
+            return error
+
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+            page_size = min(24, max(1, int(request.query_params.get("page_size", 12))))
+        except (TypeError, ValueError):
+            return Response({"error": "Pagination must use valid numbers."}, status=400)
+
+        query = request.query_params.get("q", "").strip()[:120]
+        vertical = request.query_params.get("vertical", "").strip()
+        min_rating = request.query_params.get("min_rating")
+        max_distance = request.query_params.get("max_distance")
+        sort = request.query_params.get("sort", "recommended")
+        if sort not in {"recommended", "fastest", "nearest", "rating", "name"}:
+            return Response({"error": "Invalid sort option."}, status=400)
+        if sort in {"fastest", "nearest"} and not location:
+            sort = "recommended"
+        try:
+            min_rating = float(min_rating) if min_rating not in (None, "") else None
+            max_distance = float(max_distance) if max_distance not in (None, "") else None
+        except (TypeError, ValueError):
+            return Response({"error": "Rating and distance must be valid numbers."}, status=400)
+        if min_rating is not None and not 0 <= min_rating <= 5:
+            return Response({"error": "Rating must be between 0 and 5."}, status=400)
+        if max_distance is not None and max_distance <= 0:
+            return Response({"error": "Distance must be greater than 0."}, status=400)
+        if max_distance is not None and not location:
+            return Response({"error": "Location is required for distance filtering."}, status=400)
+
+        stores = self.store_queryset()
+        if query:
+            stores = stores.filter(
+                Q(name__icontains=query)
+                | Q(branch_name__icontains=query)
+                | Q(city__icontains=query)
+                | Q(barangay__icontains=query)
+                | Q(categories__name__icontains=query)
+            ).distinct()
+        if vertical:
+            stores = stores.filter(vertical__slug=vertical)
+        if min_rating is not None:
+            stores = stores.filter(rating__gte=min_rating)
+
+        facets = self.vertical_facets()
+        payload = [
+            self.store_payload(store, request, location)
+            for store in stores
+        ]
+        if max_distance is not None:
+            payload = [
+                store
+                for store in payload
+                if store["distance_km"] is not None
+                and store["distance_km"] <= max_distance
+            ]
+        payload.sort(key=self.sort_key(sort))
+        total_items = len(payload)
+        total_pages = max(1, (total_items + page_size - 1) // page_size)
+        start = (page - 1) * page_size
+
+        return Response(
+            {
+                "results": payload[start:start + page_size],
+                "facets": {"verticals": facets},
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_items": total_items,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_previous": page > 1,
+                },
+            }
+        )
+
+    @staticmethod
+    def store_queryset():
+        available_products = Product.objects.filter(
+            is_active=True,
+            is_available=True,
+        ).filter(Q(track_inventory=False) | Q(stock_quantity__gt=0))
+        active_categories = Category.objects.filter(
+            is_active=True,
+            products__in=available_products,
+        ).distinct()
+        return (
+            Store.objects.select_related("vertical")
+            .filter(
+                is_active=True,
+                vertical__is_active=True,
+                categories__in=active_categories,
+            )
+            .prefetch_related(
+                Prefetch(
+                    "categories",
+                    queryset=active_categories.order_by("order", "name"),
+                    to_attr="public_categories",
                 )
-            
-            results.append({
-                "id": str(product.id),
-                "name": product.name,
-                "price": float(product.price),
-                "store_name": store.name,
-                "store_id": str(store.id),
-                "distance_km": round(distance, 2) if distance is not None else None,
-                "image": product.image.url if product.image else None,
-            })
+            )
+            .annotate(
+                minimum_preparation_minutes=Min(
+                    "categories__products__preparation_time_minutes",
+                    filter=Q(
+                        categories__products__is_active=True,
+                        categories__products__is_available=True,
+                    ),
+                )
+            )
+            .distinct()
+        )
 
-        # 3. Sort by Distance if possible
-        if has_location:
-            results.sort(key=lambda x: x['distance_km'] or 999)
+    @classmethod
+    def vertical_facets(cls):
+        rows = (
+            cls.store_queryset()
+            .values("vertical__name", "vertical__slug")
+            .annotate(store_count=Count("id", distinct=True))
+            .order_by("vertical__name")
+        )
+        return [
+            {
+                "name": row["vertical__name"],
+                "slug": row["vertical__slug"],
+                "store_count": row["store_count"],
+            }
+            for row in rows
+        ]
 
-        return Response(results)
+    @staticmethod
+    def store_payload(store, request, location=None):
+        distance = None
+        delivery_eta_minutes = None
+        delivery_fee = None
+        if location:
+            latitude, longitude = location
+            store_lat, store_lng = get_lat_lng(store, "latitude", "longitude")
+            distance = RiderDispatcherService.haversine(
+                longitude,
+                latitude,
+                float(store_lng),
+                float(store_lat),
+            )
+            travel_minutes, road_distance = RiderDispatcherService.calculate_eta(
+                float(store_lat),
+                float(store_lng),
+                latitude,
+                longitude,
+            )
+            delivery_eta_minutes = travel_minutes + (
+                store.minimum_preparation_minutes or 0
+            )
+            delivery_fee = float(calculate_delivery_fee(road_distance))
+        is_open = store.is_open and store.manual_override not in {
+            "CLOSED_TEMPORARILY",
+            "PAUSED_ORDERS",
+        }
+        banner_image = ""
+        if store.banner_image:
+            try:
+                banner_image = request.build_absolute_uri(store.banner_image.url)
+            except ValueError:
+                pass
+        logo_image = ""
+        if store.logo_image:
+            try:
+                logo_image = request.build_absolute_uri(store.logo_image.url)
+            except ValueError:
+                pass
+        return {
+            "id": str(store.id),
+            "slug": store.slug,
+            "name": store.name,
+            "branch_name": store.branch_name or "",
+            "banner_image": banner_image,
+            "logo_image": logo_image,
+            "vertical": {
+                "name": store.vertical.name,
+                "slug": store.vertical.slug,
+            },
+            "rating": float(store.rating),
+            "is_open": is_open,
+            "address": store.street_address,
+            "barangay": store.barangay,
+            "city": store.city,
+            "distance_km": round(distance, 2) if distance is not None else None,
+            "delivery_eta_minutes": delivery_eta_minutes,
+            "delivery_fee": delivery_fee,
+            "categories": [
+                {"name": category.name, "slug": category.slug}
+                for category in store.public_categories[:4]
+            ],
+        }
+
+    @staticmethod
+    def sort_key(sort):
+        def key(store):
+            open_rank = not store["is_open"]
+            if sort == "nearest":
+                return (
+                    open_rank,
+                    store["distance_km"] is None,
+                    store["distance_km"] or 0,
+                    store["name"],
+                )
+            if sort == "fastest":
+                return (
+                    open_rank,
+                    store["delivery_eta_minutes"] is None,
+                    store["delivery_eta_minutes"] or 0,
+                    store["distance_km"] or 0,
+                    store["name"],
+                )
+            if sort == "rating":
+                return (open_rank, -store["rating"], store["name"])
+            if sort == "name":
+                return (open_rank, store["name"])
+            return (open_rank, -store["rating"], store["name"])
+
+        return key
+
+
+def find_public_store(identifier):
+    queryset = PublicStoreListView.store_queryset()
+    store = queryset.filter(slug=identifier).first()
+    if store:
+        return store
+    try:
+        store_id = UUID(str(identifier))
+    except (TypeError, ValueError):
+        return None
+    return queryset.filter(id=store_id).first()
+
+
+class PublicStoreDetailView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "search"
+
+    def get(self, request, store_identifier):
+        store = find_public_store(store_identifier)
+        if not store:
+            return Response({"error": "Store not found."}, status=404)
+        location, error = GlobalProductSearchView.parse_location(
+            request.query_params.get("lat"),
+            request.query_params.get("lng"),
+        )
+        if error:
+            return error
+        return Response(PublicStoreListView.store_payload(store, request, location))
+
+
+class PublicStoreDiscoveryView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "search"
+
+    def get(self, request):
+        location, error = GlobalProductSearchView.parse_location(
+            request.query_params.get("lat"),
+            request.query_params.get("lng"),
+        )
+        if error:
+            return error
+        try:
+            limit = min(8, max(1, int(request.query_params.get("limit", 4))))
+        except (TypeError, ValueError):
+            return Response({"error": "Limit must be a valid number."}, status=400)
+
+        stores = PublicStoreListView.store_queryset()
+        groups = []
+        for facet in PublicStoreListView.vertical_facets():
+            payload = [
+                PublicStoreListView.store_payload(store, request, location)
+                for store in stores.filter(vertical__slug=facet["slug"])
+            ]
+            payload.sort(key=PublicStoreListView.sort_key("nearest" if location else "recommended"))
+            groups.append(
+                {
+                    "vertical": {
+                        "name": facet["name"],
+                        "slug": facet["slug"],
+                    },
+                    "total_stores": facet["store_count"],
+                    "stores": payload[:limit],
+                }
+            )
+        return Response({"groups": groups})
+
+
+class PublicStoreProductsView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "search"
+
+    def get(self, request, store_identifier):
+        store = find_public_store(store_identifier)
+        if not store:
+            return Response({"error": "Store not found."}, status=404)
+
+        filters, error = GlobalProductSearchView().parse_filters(request)
+        if error:
+            return error
+        store_products = GlobalProductSearchView.base_queryset().filter(
+            category__store_id=store.id,
+        )
+        products = GlobalProductSearchView().product_queryset(filters).filter(
+            category__store_id=store.id,
+        )
+        total_items = products.count()
+        start = (filters["page"] - 1) * filters["page_size"]
+        end = start + filters["page_size"]
+        results = [
+            GlobalProductSearchView.result_payload(product, request, filters)
+            for product in products[start:end]
+        ]
+        total_pages = max(
+            1,
+            (total_items + filters["page_size"] - 1) // filters["page_size"],
+        )
+        categories = (
+            store_products.values("category__name", "category__slug")
+            .annotate(product_count=Count("id"))
+            .order_by("category__name")
+        )
+        return Response(
+            {
+                "results": results,
+                "facets": {
+                    "categories": [
+                        {
+                            "name": item["category__name"],
+                            "slug": item["category__slug"],
+                            "product_count": item["product_count"],
+                        }
+                        for item in categories
+                    ]
+                },
+                "pagination": {
+                    "page": filters["page"],
+                    "page_size": filters["page_size"],
+                    "total_items": total_items,
+                    "total_pages": total_pages,
+                    "has_next": filters["page"] < total_pages,
+                    "has_previous": filters["page"] > 1,
+                },
+            }
+        )
 
 
 class ProductComparisonView(APIView):
@@ -784,45 +1405,79 @@ class ProductComparisonView(APIView):
     throttle_scope = "search"
 
     def get(self, request):
-        product_ids = request.query_params.getlist("ids") # Expecting ?ids=uuid1&ids=uuid2
-        
-        if len(product_ids) < 2:
-            return Response({"error": "Please select at least 2 products to compare."}, status=400)
+        product_id = request.query_params.get("product_id", "").strip()
+        if not product_id:
+            return Response({"error": "Product is required."}, status=400)
 
-        products = Product.objects.filter(id__in=product_ids).select_related('category__store')
-        
-        comparison_data = []
-        for p in products:
-            # Get average rating for the store
-            from apps.reviews.models import OrderReview
-            store = p.category.store
-            avg_rating = OrderReview.objects.filter(store=store).aggregate(Avg('store_rating'))['store_rating__avg'] or 0
+        location, error = GlobalProductSearchView.parse_location(
+            request.query_params.get("lat"),
+            request.query_params.get("lng"),
+        )
+        if error:
+            return error
 
-            comparison_data.append({
-                "id": str(p.id),
-                "name": p.name,
-                "price": float(p.price),
-                "description": p.description,
-                "store_name": store.name,
-                "store_rating": round(avg_rating, 1),
-                "image": p.image.url if p.image else None,
-            })
+        products = GlobalProductSearchView.base_queryset()
+        try:
+            selected = products.filter(id=product_id).first()
+        except ValidationError:
+            return Response({"error": "Invalid product."}, status=400)
+        if not selected:
+            return Response({"error": "Product not found."}, status=404)
 
-        return Response({
-            "comparison": comparison_data,
-            "smart_suggestion": self.get_smart_suggestion(comparison_data)
-        })
+        matches = self.matching_products(products, selected)
+        filters = {"location": location}
+        options = [
+            GlobalProductSearchView.result_payload(
+                product,
+                request,
+                filters,
+            )
+            for product in matches
+        ]
+        options.sort(
+            key=lambda item: (
+                not item["store"]["is_open"],
+                item["price"],
+                item["distance_km"] is None,
+                item["distance_km"] or 0,
+            )
+        )
+        selected_option = next(
+            item for item in options if item["id"] == str(selected.id)
+        )
+        lowest = min(options, key=lambda item: item["price"])
 
-    def get_smart_suggestion(self, data):
-        if not data: return None
-        
-        # Simple logic: Best Value = (Rating / Price) * constant
-        # For now, let's just highlight the Cheapest and the Best Rated
-        cheapest = min(data, key=lambda x: x['price'])
-        best_rated = max(data, key=lambda x: x['store_rating'])
-        
-        return {
-            "cheapest_option": cheapest['name'],
-            "best_rated_option": best_rated['name'],
-            "verdict": f"If you're on a budget, go for {cheapest['name']}. If you want the best quality, {best_rated['name']} is the winner!"
-        }
+        return Response(
+            {
+                "selected_product_id": str(selected.id),
+                "options": options,
+                "summary": {
+                    "alternative_count": max(len(options) - 1, 0),
+                    "lowest_price_product_id": lowest["id"],
+                    "potential_savings": max(
+                        selected_option["price"] - lowest["price"],
+                        0,
+                    ),
+                },
+            }
+        )
+
+    @staticmethod
+    def matching_products(products, selected):
+        matches = products.filter(
+            category__store__vertical_id=selected.category.store.vertical_id,
+        )
+        if selected.medicine_reference_id:
+            return matches.filter(
+                medicine_reference_id=selected.medicine_reference_id,
+            )
+        if selected.product_type.lower() == "medicine" and selected.generic_name:
+            matches = matches.filter(
+                generic_name__iexact=selected.generic_name,
+            )
+            if selected.dosage:
+                matches = matches.filter(dosage__iexact=selected.dosage)
+            return matches
+        if selected.sku:
+            return matches.filter(sku__iexact=selected.sku)
+        return matches.filter(name__iexact=selected.name)

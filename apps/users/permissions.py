@@ -17,8 +17,14 @@ class HasRole(BasePermission):
         return user.roles.filter(name__iexact=self.role_name).exists()
 
 
-class IsCustomer(HasRole):
-    role_name = "Customer"
+class IsCustomer(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user.is_authenticated
+            and user.is_customer
+            and not user.is_superuser
+        )
 
 
 class IsMerchant(HasRole):

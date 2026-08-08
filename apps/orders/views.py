@@ -13,12 +13,18 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import logging
 
-from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
+from apps.orders.models import (
+    CustomerCart,
+    DeliveryMethod,
+    Order,
+    OrderItem,
+    OrderStatus,
+)
+from apps.users.permissions import IsCustomer, IsMerchant
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
 from apps.catalog.models import Product
 from apps.vendors.models import Store
-from apps.users.permissions import IsMerchant
 from apps.vendors.permissions import IsMerchantOrAdmin
 from .serializers import CheckoutRequestSerializer, OrderSerializer
 from .services import ACTIVE_STATUSES, build_store_order_activity, merchant_order_summary
@@ -147,7 +153,7 @@ class MerchantStoreOrderAnalyticsView(APIView):
 
 
 class CheckoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsCustomer]
     throttle_scope = "checkout"
 
     @transaction.atomic
@@ -268,8 +274,8 @@ class CheckoutView(APIView):
             store=store,
             delivery_method=delivery_method,
             delivery_address_text=data.get("address_text", ""),
-            delivery_latitude=data["latitude"],
-            delivery_longitude=data["longitude"],
+            delivery_latitude=data.get("latitude", store.latitude),
+            delivery_longitude=data.get("longitude", store.longitude),
             subtotal=calculated_subtotal,
             delivery_fee=delivery_fee,
             system_fee=system_fee,
@@ -291,6 +297,11 @@ class CheckoutView(APIView):
                 unit_price=item["unit_price"],
                 special_instructions=item["special_instructions"]
             )
+
+        CustomerCart.objects.filter(
+            customer=user,
+            store=store,
+        ).delete()
 
         # 4. Handle Payment Logic
         requested_method = data["payment_method"]

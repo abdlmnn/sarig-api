@@ -1,14 +1,25 @@
 from datetime import timedelta
 from decimal import Decimal
+from io import BytesIO
+from unittest.mock import patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
+from PIL import Image
 from rest_framework.test import APIClient
 
 from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
 from apps.catalog.models import Category, Product
 from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store, StoreManualOverride
+
+
+def image_upload(name, size=(800, 800)):
+    output = BytesIO()
+    Image.new("RGB", size, "white").save(output, format="PNG")
+    return SimpleUploadedFile(name, output.getvalue(), content_type="image/png")
 
 
 class MerchantDashboardOverviewTests(TestCase):
@@ -31,6 +42,7 @@ class MerchantDashboardOverviewTests(TestCase):
             street_address="Banggolo",
             city="Marawi City",
             commission_rate=Decimal("15.00"),
+            logo_image="stores/logos/test-store.png",
         )
         category = Category.objects.create(store=self.store, name="Meals", slug="meals")
         self.product = Product.objects.create(category=category, name="Chicken biryani", price=Decimal("120.00"))
@@ -63,6 +75,71 @@ class MerchantDashboardOverviewTests(TestCase):
         self.assertIn("status_reason", response.data["merchant"])
         self.assertIn("manual_override", response.data["merchant"])
         self.assertIn("next_status_change", response.data["merchant"])
+
+    def test_merchant_dashboard_requires_a_store_logo(self):
+        self.store.logo_image = None
+        self.store.save(update_fields=["logo_image"])
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get("/api/v1/merchant/dashboard/overview/")
+
+        self.assertEqual(response.status_code, 428)
+        self.assertEqual(response.data["code"], "STORE_LOGO_REQUIRED")
+
+    def test_store_generates_unique_readable_slugs(self):
+        duplicate = Store.objects.create(
+            owner=self.merchant,
+            vertical=self.store.vertical,
+            name=self.store.name,
+            latitude="8.004000",
+            longitude="124.284000",
+            street_address="Second Street",
+            city="Marawi City",
+        )
+
+        self.assertEqual(self.store.slug, "sari-sari-restaurant")
+        self.assertEqual(duplicate.slug, "sari-sari-restaurant-2")
+
+    def test_store_slug_does_not_change_after_creation(self):
+        original_slug = self.store.slug
+        self.store.name = "Renamed Restaurant"
+        self.store.slug = "renamed-restaurant"
+        self.store.save(update_fields=["name", "slug"])
+
+        self.store.refresh_from_db()
+        self.assertEqual(self.store.slug, original_slug)
+
+    def test_store_slug_recovers_from_concurrent_name_collision(self):
+        with patch(
+            "django.db.models.query.QuerySet.exists",
+            side_effect=[False, False, True],
+        ):
+            duplicate = Store.objects.create(
+                owner=self.merchant,
+                vertical=self.store.vertical,
+                name=self.store.name,
+                latitude="8.004000",
+                longitude="124.284000",
+                street_address="Second Street",
+                city="Marawi City",
+            )
+
+        self.assertTrue(duplicate.slug.startswith("sari-sari-restaurant-"))
+        self.assertNotEqual(duplicate.slug, self.store.slug)
+
+    def test_database_rejects_blank_store_slug_when_save_is_bypassed(self):
+        store = Store(
+            owner=self.merchant,
+            vertical=self.store.vertical,
+            name="Bulk Store",
+            latitude="8.004000",
+            longitude="124.284000",
+            street_address="Bulk Street",
+            city="Marawi City",
+        )
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Store.objects.bulk_create([store])
 
     def test_merchant_order_dashboard_overview_returns_order_payload(self):
         pending = self.create_order(OrderStatus.PENDING, "150.00")
@@ -272,3 +349,127 @@ class MerchantDashboardOverviewTests(TestCase):
         self.store.refresh_from_db()
         self.assertIsNone(self.store.manual_override)
         self.assertEqual(self.store.manual_override_reason, "")
+
+    def test_merchant_can_update_store_branding(self):
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.patch(
+            f"/api/v1/merchant/store/branding/{self.store.id}/",
+            {
+                "logo_image": image_upload("logo.png"),
+                "banner_image": image_upload("banner.png", (1600, 600)),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("logo.png", response.data["logo_image"])
+        self.assertIn("banner.png", response.data["banner_image"])
+
+        self.store.refresh_from_db()
+        self.assertTrue(self.store.logo_image.name.startswith("stores/logos/"))
+        self.assertTrue(self.store.banner_image.name.startswith("stores/banners/"))
+
+        public_response = self.client.get(
+            f"/api/v1/catalog/stores/{self.store.id}/"
+        )
+        self.assertEqual(public_response.status_code, 200)
+        self.assertIn("logo.png", public_response.data["logo_image"])
+
+        self.store.logo_image.delete(save=False)
+        self.store.banner_image.delete(save=False)
+
+    def test_store_branding_rejects_invalid_upload(self):
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.patch(
+            f"/api/v1/merchant/store/branding/{self.store.id}/",
+            {
+                "logo_image": SimpleUploadedFile(
+                    "logo.txt",
+                    b"not an image",
+                    content_type="text/plain",
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_store_branding_requires_merchant_role(self):
+        self.client.force_authenticate(self.customer)
+
+        response = self.client.get("/api/v1/merchant/store/branding/")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_store_branding_lists_all_owned_active_stores(self):
+        second_store = Store.objects.create(
+            owner=self.merchant,
+            vertical=self.store.vertical,
+            name="Second Branch",
+            latitude="8.004000",
+            longitude="124.284000",
+            street_address="Second Street",
+            city="Marawi City",
+        )
+        Store.objects.create(
+            owner=self.merchant,
+            vertical=self.store.vertical,
+            name="Inactive Branch",
+            latitude="8.005000",
+            longitude="124.285000",
+            street_address="Third Street",
+            city="Marawi City",
+            is_active=False,
+        )
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.get("/api/v1/merchant/store/branding/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {store["id"] for store in response.data["stores"]},
+            {str(self.store.id), str(second_store.id)},
+        )
+        first_store = next(
+            store
+            for store in response.data["stores"]
+            if store["id"] == str(self.store.id)
+        )
+        self.assertIn("status", first_store)
+        self.assertIn("status_label", first_store)
+        self.assertEqual(first_store["business_category"], self.store.vertical.name)
+        self.assertEqual(
+            first_store["vertical"],
+            {
+                "name": self.store.vertical.name,
+                "slug": self.store.vertical.slug,
+            },
+        )
+
+    def test_merchant_cannot_update_another_merchants_branding(self):
+        other_merchant = User.objects.create_user(
+            username="branding-owner",
+            email="branding-owner@example.com",
+            password="password123",
+        )
+        other_merchant.roles.add(Role.objects.get(name="Merchant"))
+        other_store = Store.objects.create(
+            owner=other_merchant,
+            vertical=self.store.vertical,
+            name="Other Store",
+            latitude="8.006000",
+            longitude="124.286000",
+            street_address="Other Street",
+            city="Marawi City",
+        )
+        self.client.force_authenticate(self.merchant)
+
+        response = self.client.patch(
+            f"/api/v1/merchant/store/branding/{other_store.id}/",
+            {"logo_image": image_upload("other-logo.png")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 404)

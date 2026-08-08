@@ -216,11 +216,17 @@ AUTH_REFRESH_COOKIE_NAMES = {
         if AUTH_COOKIE_SECURE
         else "sarig-merchant-refresh"
     ),
+    "CUSTOMER": (
+        "__Host-sarig-customer-refresh"
+        if AUTH_COOKIE_SECURE
+        else "sarig-customer-refresh"
+    ),
 }
 AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
 AUTH_SESSION_REFRESH_HOURS = int(os.getenv("AUTH_SESSION_REFRESH_HOURS", "8"))
 AUTH_ADMIN_REMEMBER_DAYS = int(os.getenv("AUTH_ADMIN_REMEMBER_DAYS", "7"))
 AUTH_MERCHANT_REMEMBER_DAYS = int(os.getenv("AUTH_MERCHANT_REMEMBER_DAYS", "30"))
+AUTH_CUSTOMER_REMEMBER_DAYS = int(os.getenv("AUTH_CUSTOMER_REMEMBER_DAYS", "30"))
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
 CSRF_COOKIE_SAMESITE = "Lax"

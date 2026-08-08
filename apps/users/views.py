@@ -1,5 +1,6 @@
 from .serializers import (
     AdminLoginSerializer,
+    CustomerLoginSerializer,
     LoginSerializer,
     MerchantLoginSerializer,
     UserSerializer,
@@ -177,6 +178,11 @@ class MerchantCookieLoginView(CookieScopedLoginView):
     serializer_class = MerchantLoginSerializer
 
 
+class CustomerCookieLoginView(CookieScopedLoginView):
+    account_type = "CUSTOMER"
+    serializer_class = CustomerLoginSerializer
+
+
 @method_decorator(csrf_protect, name="dispatch")
 class CookieRefreshView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -224,6 +230,10 @@ class MerchantCookieRefreshView(CookieRefreshView):
     account_type = "MERCHANT"
 
 
+class CustomerCookieRefreshView(CookieRefreshView):
+    account_type = "CUSTOMER"
+
+
 @method_decorator(csrf_protect, name="dispatch")
 class CookieLogoutView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -251,6 +261,10 @@ class AdminCookieLogoutView(CookieLogoutView):
 
 class MerchantCookieLogoutView(CookieLogoutView):
     account_type = "MERCHANT"
+
+
+class CustomerCookieLogoutView(CookieLogoutView):
+    account_type = "CUSTOMER"
 
 
 class LogoutView(APIView):

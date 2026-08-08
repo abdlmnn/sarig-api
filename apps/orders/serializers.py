@@ -20,8 +20,16 @@ class CheckoutRequestSerializer(serializers.Serializer):
         choices=DeliveryMethod.choices, default=DeliveryMethod.DELIVERY
     )
     address_text = serializers.CharField(required=False, allow_blank=True, max_length=1000)
-    latitude = serializers.DecimalField(max_digits=9, decimal_places=6)
-    longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    latitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+    )
+    longitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+    )
     promo_code = serializers.CharField(required=False, allow_blank=True, max_length=64)
 
     def validate_latitude(self, value):
@@ -35,8 +43,15 @@ class CheckoutRequestSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        if attrs["delivery_method"] == DeliveryMethod.DELIVERY and not attrs.get("address_text"):
-            raise serializers.ValidationError({"address_text": "Address is required for delivery."})
+        if attrs["delivery_method"] == DeliveryMethod.DELIVERY:
+            if not attrs.get("address_text"):
+                raise serializers.ValidationError(
+                    {"address_text": "Address is required for delivery."}
+                )
+            if "latitude" not in attrs or "longitude" not in attrs:
+                raise serializers.ValidationError(
+                    {"location": "A delivery location is required."}
+                )
         return attrs
 
 

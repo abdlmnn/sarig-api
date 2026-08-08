@@ -1,11 +1,12 @@
 import uuid
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from apps.users.models import User
 from decimal import Decimal
 from apps.users.geo import to_wkt_point
 from django.conf import settings
 from django.contrib.gis.db import models as gis_models
 from django.contrib.gis.geos import Point
+from django.utils.text import slugify
 
 
 class StoreDeliveryTime(models.TextChoices):
@@ -52,6 +53,7 @@ class Store(models.Model):
         related_name="stores",
     )
     name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=280, unique=True, editable=False)
     branch_name = models.CharField(max_length=120, blank=True)
     company_email = models.EmailField(blank=True)
     contact_number = models.CharField(max_length=15, blank=True)
@@ -88,7 +90,8 @@ class Store(models.Model):
     auto_accept_orders = models.BooleanField(default=False)
     
     # Metadata
-    image = models.ImageField(upload_to="stores/", null=True, blank=True)
+    logo_image = models.ImageField(upload_to="stores/logos/", null=True, blank=True)
+    banner_image = models.ImageField(upload_to="stores/banners/", null=True, blank=True)
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal("5.00"))
     
     created_at = models.DateTimeField(auto_now_add=True)
@@ -101,11 +104,45 @@ class Store(models.Model):
             models.Index(fields=["is_open"]),
             models.Index(fields=["is_active"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(slug=""),
+                name="vendors_store_slug_not_blank",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.city})"
 
     def save(self, *args, **kwargs):
+        if self.pk:
+            saved_slug = (
+                Store.objects.filter(pk=self.pk)
+                .values_list("slug", flat=True)
+                .first()
+            )
+            if saved_slug:
+                self.slug = saved_slug
+
+        slug_created = False
+        base_slug = ""
+        if not self.slug:
+            base_slug = slugify(self.name)[:260] or str(self.id)
+            slug = base_slug
+            if Store.objects.exclude(pk=self.pk).filter(slug=slug).exists():
+                branch_slug = slugify(self.branch_name)[:80]
+                if branch_slug:
+                    slug = f"{base_slug[:199]}-{branch_slug}"
+            suffix = 2
+            while Store.objects.exclude(pk=self.pk).filter(slug=slug).exists():
+                slug = f"{base_slug[:270 - len(str(suffix))]}-{suffix}"
+                suffix += 1
+            self.slug = slug
+            slug_created = True
+        if slug_created and kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = list(
+                dict.fromkeys([*kwargs["update_fields"], "slug"])
+            )
         self.location_wkt = to_wkt_point(self.latitude, self.longitude)
         if (
             getattr(settings, "USE_POSTGIS", False)
@@ -113,4 +150,16 @@ class Store(models.Model):
             and self.longitude is not None
         ):
             self.location_point = Point(float(self.longitude), float(self.latitude), srid=4326)
-        super().save(*args, **kwargs)
+        if not slug_created:
+            return super().save(*args, **kwargs)
+
+        try:
+            with transaction.atomic():
+                return super().save(*args, **kwargs)
+        except IntegrityError:
+            if not Store.objects.filter(slug=self.slug).exists():
+                raise
+
+        unique_suffix = str(self.id).replace("-", "")[:12]
+        self.slug = f"{base_slug[:267]}-{unique_suffix}"
+        return super().save(*args, **kwargs)

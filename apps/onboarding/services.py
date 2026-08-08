@@ -194,7 +194,6 @@ class ApplicationService:
             province=application.province,
             postal_code=application.postal_code,
             pinned_address=application.pinned_address,
-            image=application.storefront_photo,
         )
 
     @staticmethod

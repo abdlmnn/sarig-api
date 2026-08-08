@@ -1,6 +1,8 @@
 from rest_framework import serializers
+from django.utils import timezone
 from apps.common.validators import validate_image_upload
 from .models import BusinessVertical, Store, StoreManualOverride
+from .utils import PH_TZ, store_availability_payload
 
 
 class BusinessVerticalSerializer(serializers.ModelSerializer):
@@ -17,6 +19,7 @@ class StoreSerializer(serializers.ModelSerializer):
             "owner",
             "vertical",
             "name",
+            "slug",
             "branch_name",
             "company_email",
             "contact_number",
@@ -32,13 +35,15 @@ class StoreSerializer(serializers.ModelSerializer):
             "commission_rate",
             "is_open",
             "is_active",
-            "image",
+            "logo_image",
+            "banner_image",
             "rating",
             "created_at",
             "updated_at",
         ]
         read_only_fields = (
             "owner",
+            "slug",
             "commission_rate",
             "is_active",
             "rating",
@@ -52,7 +57,74 @@ class StoreSerializer(serializers.ModelSerializer):
             validated_data["owner"] = request.user
         return super().create(validated_data)
 
-    def validate_image(self, value):
+    def validate_logo_image(self, value):
+        validate_image_upload(value)
+        return value
+
+    def validate_banner_image(self, value):
+        validate_image_upload(value)
+        return value
+
+
+class StoreBrandingSerializer(serializers.ModelSerializer):
+    business_category = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+    vertical = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Store
+        fields = [
+            "id",
+            "name",
+            "business_category",
+            "vertical",
+            "logo_image",
+            "banner_image",
+            "status",
+            "status_label",
+        ]
+        read_only_fields = [
+            "id",
+            "name",
+            "business_category",
+            "vertical",
+            "status",
+            "status_label",
+        ]
+
+    def get_business_category(self, obj):
+        return obj.vertical.name if obj.vertical_id else None
+
+    def get_vertical(self, obj):
+        if not obj.vertical_id:
+            return None
+        return {
+            "name": obj.vertical.name,
+            "slug": obj.vertical.slug,
+        }
+
+    def get_status(self, obj):
+        return self.get_availability(obj)["status"]
+
+    def get_status_label(self, obj):
+        return self.get_availability(obj)["status_label"]
+
+    def get_availability(self, obj):
+        availability = getattr(obj, "_branding_availability", None)
+        if availability is None:
+            availability = store_availability_payload(
+                obj,
+                timezone.now().astimezone(PH_TZ),
+            )
+            obj._branding_availability = availability
+        return availability
+
+    def validate_logo_image(self, value):
+        validate_image_upload(value)
+        return value
+
+    def validate_banner_image(self, value):
         validate_image_upload(value)
         return value
 
