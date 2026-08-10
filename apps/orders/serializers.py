@@ -7,6 +7,12 @@ from apps.payments.models import PaymentMethod
 class CheckoutItemSerializer(serializers.Serializer):
     product_id = serializers.UUIDField()
     quantity = serializers.IntegerField(min_value=1, max_value=99, default=1)
+    modifier_item_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        max_length=30,
+    )
     special_instructions = serializers.CharField(
         required=False, allow_blank=True, max_length=500
     )

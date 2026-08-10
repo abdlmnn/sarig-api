@@ -221,6 +221,7 @@ class ModifierItem(models.Model):
     """The actual options. Example: 'Large', 'Extra Cheese'"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     group = models.ForeignKey(ModifierGroup, on_delete=models.CASCADE, related_name="items")
+    linked_product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="modifier_choice_links")
     name = models.CharField(max_length=100)
     extra_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Adds ₱15 for extra cheese
     is_available = models.BooleanField(default=True)

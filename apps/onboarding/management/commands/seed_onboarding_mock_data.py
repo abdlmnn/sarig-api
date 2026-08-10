@@ -11,7 +11,15 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.marketing.models import DiscountType, PromoCode
-from apps.catalog.models import Category, InventoryMode, Product, ProductType, UnitType
+from apps.catalog.models import (
+    Category,
+    InventoryMode,
+    ModifierGroup,
+    ModifierItem,
+    Product,
+    ProductType,
+    UnitType,
+)
 from apps.onboarding.models import (
     AccountSetupToken,
     ApplicationEditToken,
@@ -31,6 +39,7 @@ from apps.orders.models import DeliveryMethod, Order, OrderItem, OrderStatus
 from apps.payments.models import PaymentMethod, PaymentStatus, PaymentTransaction
 from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
+from apps.vendors.models import StoreManualOverride
 
 
 PNG_BYTES = (
@@ -65,6 +74,7 @@ MERCHANT_SEEDS = [
     ("Kambal Chicken House", "Fahad", "Mimbalawag", "merchant6@sarig.local", "+63 917-110-1006", BusinessType.RESTAURANT, DeliveryTime.ALL_DAY, "Family Hall", "Datu Naga", "Interior Road 3", LocationSource.PIN, ApplicationStatus.PENDING, "", []),
     ("Hariraya Dry Goods", "Mina", "Racman", "merchant7@sarig.local", "+63 917-110-1007", BusinessType.SHOP, DeliveryTime.AFTERNOON, "Textiles Unit", "Bangon", "Bangon Crossing", LocationSource.PIN, ApplicationStatus.UNDER_REVIEW, "", []),
     ("Sajid Coffee Corner", "Aina", "Sambitory", "merchant8@sarig.local", "+63 917-110-1008", BusinessType.RESTAURANT, DeliveryTime.MORNING, "Campus Side", "Rapasun MSU", "University Avenue", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
+    ("Sajid Coffee Corner", "Aina", "Sambitory", "merchant8b@sarig.local", "+63 917-110-1088", BusinessType.RESTAURANT, DeliveryTime.ALL_DAY, "Poblacion Branch", "Poblacion Core", "Quezon Avenue", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
     ("Bai Essentials", "Maryam", "Lidasan", "merchant9@sarig.local", "+63 917-110-1009", BusinessType.SHOP, DeliveryTime.ALL_DAY, "Retail Booth", "Lilod Madaya", "Main Access Road", LocationSource.MANUAL, ApplicationStatus.REQUEST_CHANGES, "Please resubmit DTI certificate with a complete page scan.", ["dti_sec_certificate"]),
     ("Panggao Seafood Grill", "Ismael", "Pangandaman", "merchant10@sarig.local", "+63 917-110-1010", BusinessType.RESTAURANT, DeliveryTime.EVENING, "Lakeside Grill", "Marinaut West", "Lakeside Drive", LocationSource.PIN, ApplicationStatus.PENDING, "", []),
     ("Ranaw Grill and Kitchen", "Salma", "Macapaar", "merchant11@sarig.local", "+63 917-110-1011", BusinessType.RESTAURANT, DeliveryTime.ALL_DAY, "Poblacion Branch", "Poblacion Core", "Quezon Avenue", LocationSource.PIN, ApplicationStatus.APPROVED, "", []),
@@ -94,6 +104,7 @@ MERCHANT_APPLICATION_IDS = [
     "MR-6478",
     "MR-7584",
     "MR-8690",
+    "MR-8701",
     "MR-9706",
     "MR-1812",
     "MR-2928",
@@ -131,12 +142,14 @@ class Command(BaseCommand):
             merchant_apps = self.seed_merchants(admin_user)
             rider_apps = self.seed_riders(admin_user)
             stores = self.materialize_approved_merchants(merchant_apps)
+            self.seed_store_availability(stores)
             self.seed_store_branding(stores)
             self.seed_marketplace_products(stores)
             riders = self.materialize_approved_riders(rider_apps)
             customers = self.ensure_customers()
             promo_codes = self.ensure_promo_codes()
             self.seed_orders(stores, riders, customers, promo_codes)
+            self.cleanup_legacy_mock_categories(stores)
             self.seed_rides(riders, customers)
             self.seed_zone_snapshots()
             self.seed_alerts()
@@ -459,6 +472,24 @@ class Command(BaseCommand):
                 stores.append(ApplicationService.create_store_for_merchant(app))
         return stores
 
+    def seed_store_availability(self, stores):
+        closed_store = next(
+            (item for item in stores if item.name == "Lake Lanao Chicken House"),
+            None,
+        )
+        if not closed_store:
+            return
+
+        closed_store.manual_override = StoreManualOverride.CLOSED_TEMPORARILY
+        closed_store.manual_override_reason = "Closed for today's demo"
+        closed_store.save(
+            update_fields=[
+                "manual_override",
+                "manual_override_reason",
+                "updated_at",
+            ]
+        )
+
     def seed_store_branding(self, stores):
         store = next(
             (item for item in stores if item.name == "Ranaw Grill and Kitchen"),
@@ -530,6 +561,11 @@ class Command(BaseCommand):
                 continue
             self.ensure_mock_product(store, "Chicken Biryani", Decimal("160.00"))
             self.ensure_mock_product(store, "Iced Tea", Decimal("35.00"))
+            self.ensure_mock_product(store, "Mango Shake", Decimal("75.00"))
+            self.ensure_mock_product(store, "Cucumber Lemonade", Decimal("45.00"))
+            self.ensure_mock_product(store, "Bottled Water", Decimal("20.00"))
+            self.hide_modifier_only_products(store)
+        self.hide_modifier_only_products()
 
     def ensure_customers(self):
         User = get_user_model()
@@ -645,32 +681,175 @@ class Command(BaseCommand):
         return ["Jasmine Rice 5kg", "Bottled Water Pack"]
 
     def ensure_mock_product(self, store, name, price):
+        category_name, category_slug = self.demo_product_category(store, name)
         category, _ = Category.objects.update_or_create(
             store=store,
-            slug="mock-order-items",
+            slug=category_slug,
             defaults={
-                "name": "Mock Order Items",
-                "description": "Seeded items for realistic demo orders.",
+                "name": category_name,
+                "description": "",
                 "is_active": True,
                 "order": 0,
             },
         )
-        product_type = ProductType.FOOD if getattr(store.vertical, "slug", "") == "restaurant" else ProductType.GROCERY
-        product, _ = Product.objects.update_or_create(
-            category=category,
-            slug=name.lower().replace(" ", "-"),
-            defaults={
-                "name": name,
-                "description": "Seeded item used by demo orders.",
-                "price": price,
-                "product_type": product_type,
-                "unit_type": UnitType.PIECE,
-                "inventory_mode": InventoryMode.NONE,
-                "is_available": True,
-                "is_active": True,
-            },
+        product_type = self.demo_product_type(store)
+        product_slug = name.lower().replace(" ", "-")
+        product = Product.objects.filter(
+            category__store=store,
+            slug=product_slug,
+        ).order_by("created_at").first()
+        if not product:
+            product = Product(category=category, slug=product_slug)
+        product.category = category
+        product.name = name
+        product.description = "Seeded item used by demo orders."
+        product.price = price
+        product.product_type = product_type
+        product.unit_type = UnitType.PIECE
+        product.inventory_mode = InventoryMode.NONE
+        product.is_available = True
+        product.is_active = True
+        product.save()
+        self.seed_restaurant_modifiers(product)
+
+        Category.objects.filter(store=store, slug="mock-order-items").update(
+            is_active=False,
         )
         return product
+
+    def seed_restaurant_modifiers(self, product):
+        if getattr(product.category.store.vertical, "slug", "") != "restaurant":
+            return
+        if product.category.slug == "drinks":
+            product.modifier_groups.all().delete()
+            return
+
+        drink_group = self.ensure_modifier_group(
+            product,
+            "Choose your drink",
+            is_required=False,
+            max_selections=1,
+        )
+        self.ensure_modifier_items(
+            drink_group,
+            [
+                ("Iced Tea", Decimal("35.00")),
+                ("Cucumber Lemonade", Decimal("45.00")),
+                ("Orange Juice", Decimal("55.00")),
+                ("Mango Shake", Decimal("75.00")),
+                ("Bottled Water", Decimal("20.00")),
+            ],
+        )
+
+        sides_group = self.ensure_modifier_group(
+            product,
+            "Add rice, fries, or sides",
+            is_required=False,
+            max_selections=3,
+        )
+        self.ensure_modifier_items(
+            sides_group,
+            [
+                ("Extra Rice", Decimal("25.00")),
+                ("Regular Fries", Decimal("55.00")),
+                ("Cheese Fries", Decimal("80.00")),
+                ("Garlic Sauce", Decimal("15.00")),
+            ],
+        )
+
+    def ensure_modifier_group(
+        self,
+        product,
+        name,
+        *,
+        is_required,
+        max_selections,
+    ):
+        group, _ = ModifierGroup.objects.update_or_create(
+            product=product,
+            name=name,
+            defaults={
+                "is_required": is_required,
+                "max_selections": max_selections,
+            },
+        )
+        return group
+
+    def ensure_modifier_items(self, group, items):
+        keep_names = []
+        for name, price in items:
+            keep_names.append(name)
+            ModifierItem.objects.update_or_create(
+                group=group,
+                name=name,
+                defaults={
+                    "extra_price": price,
+                    "is_available": True,
+                    "linked_product": self.modifier_linked_product(group, name),
+                },
+            )
+        group.items.exclude(name__in=keep_names).delete()
+
+    def modifier_linked_product(self, group, name):
+        return Product.objects.filter(
+            category__store=group.product.category.store,
+            name=name,
+            is_active=True,
+        ).exclude(id=group.product_id).first()
+
+    def hide_modifier_only_products(self, store=None):
+        products = Product.objects.filter(
+            category__store__vertical__slug="restaurant",
+            name__in=[
+                "Extra Rice",
+                "Regular Fries",
+                "Cheese Fries",
+                "Garlic Sauce",
+                "Palapa",
+            ],
+        )
+        if store:
+            products = products.filter(category__store=store)
+        products.update(is_active=False, is_available=False)
+
+    def cleanup_legacy_mock_categories(self, stores):
+        for store in stores:
+            legacy_categories = Category.objects.filter(
+                Q(name__icontains="mock") | Q(slug__icontains="mock"),
+                store=store,
+                is_active=True,
+            )
+            for category in legacy_categories:
+                products = list(category.products.filter(is_active=True))
+                for product in products:
+                    self.ensure_mock_product(store, product.name, product.price)
+                category.is_active = False
+                category.save(update_fields=["is_active"])
+
+    def demo_product_category(self, store, name):
+        slug = getattr(store.vertical, "slug", "")
+        normalized_name = name.lower()
+        if slug == "restaurant":
+            if any(word in normalized_name for word in ["tea", "water", "lemonade", "shake"]):
+                return "Drinks", "drinks"
+            return "Rice Meals", "rice-meals"
+        if slug == "pharmacy":
+            if any(word in normalized_name for word in ["vitamin", "supplement"]):
+                return "Vitamins and Supplements", "vitamins-and-supplements"
+            return "Medicines", "medicines"
+        if slug in {"grocery", "market"}:
+            if any(word in normalized_name for word in ["water", "drink", "juice"]):
+                return "Beverages", "beverages"
+            return "Pantry Staples", "pantry-staples"
+        return "Essentials", "essentials"
+
+    def demo_product_type(self, store):
+        slug = getattr(store.vertical, "slug", "")
+        if slug == "restaurant":
+            return ProductType.FOOD
+        if slug == "pharmacy":
+            return ProductType.MEDICINE
+        return ProductType.GROCERY
 
     def seed_rides(self, riders, customers):
         if not riders or not customers:

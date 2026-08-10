@@ -4,7 +4,7 @@ from django.db import models
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from apps.vendors.models import Store
-from apps.catalog.models import Product
+from apps.catalog.models import ModifierItem, Product
 
 
 logger = logging.getLogger(__name__)
@@ -162,6 +162,8 @@ class CustomerCartItem(models.Model):
         related_name="items",
     )
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    line_key = models.CharField(max_length=1500, db_index=True)
+    modifiers = models.ManyToManyField(ModifierItem, blank=True)
     quantity = models.PositiveSmallIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(99)]
     )
@@ -173,8 +175,8 @@ class CustomerCartItem(models.Model):
         ordering = ["created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["cart", "product"],
-                name="unique_product_per_customer_cart",
+                fields=["cart", "line_key"],
+                name="unique_line_per_customer_cart",
             )
         ]
 

@@ -4,7 +4,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.catalog.models import Product
+from apps.catalog.models import ModifierGroup, ModifierItem, Product
 from apps.users.permissions import IsCustomer
 
 from .cart_serializers import (
@@ -19,7 +19,10 @@ def customer_carts(user):
     return (
         CustomerCart.objects.filter(customer=user)
         .select_related("store__vertical")
-        .prefetch_related("items__product")
+        .prefetch_related(
+            "items__product",
+            "items__modifiers__group",
+        )
     )
 
 
@@ -57,11 +60,15 @@ class CustomerCartItemView(APIView):
             customer=request.user,
             store=product.category.store,
         )
-        CustomerCartItem.objects.update_or_create(
+        cart_item, _ = CustomerCartItem.objects.update_or_create(
             cart=cart,
-            product=product,
-            defaults=serializer.validated_data,
+            line_key=str(product.id),
+            defaults={
+                "product": product,
+                **serializer.validated_data,
+            },
         )
+        cart_item.modifiers.clear()
         cart.save(update_fields=["updated_at"])
         return Response(serialize_carts(request))
 
@@ -69,7 +76,7 @@ class CustomerCartItemView(APIView):
     def delete(self, request, product_id):
         CustomerCartItem.objects.filter(
             cart__customer=request.user,
-            product_id=product_id,
+            line_key=str(product_id),
         ).delete()
         CustomerCart.objects.filter(customer=request.user, items__isnull=True).delete()
         return Response(serialize_carts(request))
@@ -99,11 +106,14 @@ class CustomerCartSyncView(APIView):
         for basket in baskets:
             products = {
                 product.id: product
-                for product in Product.objects.select_related("category__store").filter(
+                for product in Product.objects.select_related(
+                    "category__store",
+                ).prefetch_related("modifier_groups__items").filter(
                     id__in=[item["product_id"] for item in basket["items"]]
                 )
             }
-            if len(products) != len(basket["items"]):
+            product_ids = {item["product_id"] for item in basket["items"]}
+            if len(products) != len(product_ids):
                 return Response(
                     {"detail": "One or more products no longer exist."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -130,28 +140,48 @@ class CustomerCartSyncView(APIView):
             ).first()
             if replace and cart:
                 cart.items.exclude(
-                    product_id__in=[item["product_id"] for item in basket["items"]]
+                    line_key__in=[
+                        cart_line_key(
+                            item["product_id"],
+                            item.get("modifier_item_ids", []),
+                        )
+                        for item in basket["items"]
+                    ]
                 ).delete()
             for item in basket["items"]:
                 product = products[item["product_id"]]
+                modifiers, error = selected_cart_modifiers(
+                    product,
+                    item.get("modifier_item_ids", []),
+                )
+                if error:
+                    return Response(
+                        {"detail": error},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 if not cart:
                     cart = CustomerCart.objects.create(
                         customer=request.user,
                         store_id=basket["store_id"],
                     )
+                line_key = cart_line_key(
+                    product.id,
+                    [modifier.id for modifier in modifiers],
+                )
                 existing = CustomerCartItem.objects.filter(
                     cart=cart,
-                    product=product,
+                    line_key=line_key,
                 ).first()
                 quantity = (
                     item["quantity"]
                     if replace
                     else max(existing.quantity if existing else 0, item["quantity"])
                 )
-                CustomerCartItem.objects.update_or_create(
+                cart_item, _ = CustomerCartItem.objects.update_or_create(
                     cart=cart,
-                    product=product,
+                    line_key=line_key,
                     defaults={
+                        "product": product,
                         "quantity": quantity,
                         "special_instructions": item.get(
                             "special_instructions",
@@ -159,6 +189,7 @@ class CustomerCartSyncView(APIView):
                         ),
                     },
                 )
+                cart_item.modifiers.set(modifiers)
             if cart:
                 cart.save(update_fields=["updated_at"])
 
@@ -173,4 +204,43 @@ def product_cart_error(product):
         return "This product is currently unavailable."
     if product.requires_prescription:
         return "This product requires a prescription."
+    return ""
+
+
+def cart_line_key(product_id, modifier_ids):
+    modifiers = sorted(str(modifier_id) for modifier_id in modifier_ids)
+    return f"{product_id}:{':'.join(modifiers)}" if modifiers else str(product_id)
+
+
+def selected_cart_modifiers(product, modifier_ids):
+    if not modifier_ids:
+        return [], validate_cart_modifiers(product, [])
+
+    modifiers = list(
+        ModifierItem.objects.select_related("group").filter(
+            id__in=modifier_ids,
+            group__product=product,
+            is_available=True,
+        )
+    )
+    if len(modifiers) != len(set(modifier_ids)):
+        return [], f"Invalid modifier selected for {product.name}."
+    error = validate_cart_modifiers(product, modifiers)
+    return modifiers, error
+
+
+def validate_cart_modifiers(product, selected_modifiers):
+    selected_by_group = {}
+    for modifier in selected_modifiers:
+        selected_by_group.setdefault(modifier.group_id, []).append(modifier)
+
+    for group in ModifierGroup.objects.filter(product=product):
+        selected = selected_by_group.get(group.id, [])
+        if group.is_required and not selected:
+            return f"{group.name} is required for {product.name}."
+        if len(selected) > group.max_selections:
+            return (
+                f"Select up to {group.max_selections} option(s) "
+                f"for {group.name}."
+            )
     return ""
