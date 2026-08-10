@@ -23,7 +23,7 @@ from apps.orders.models import (
 from apps.users.permissions import IsCustomer, IsMerchant
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
-from apps.catalog.models import Product
+from apps.catalog.models import ModifierGroup, ModifierItem, Product
 from apps.vendors.models import Store
 from apps.vendors.permissions import IsMerchantOrAdmin
 from .serializers import CheckoutRequestSerializer, OrderSerializer
@@ -216,13 +216,53 @@ class CheckoutView(APIView):
                     {"error": f"Insufficient stock for {product.name}."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            calculated_subtotal += product.price * qty
+            modifier_ids = item_data.get("modifier_item_ids", [])
+            selected_modifiers = []
+            modifier_total = Decimal("0.00")
+            if modifier_ids:
+                selected_modifiers = list(
+                    ModifierItem.objects.select_related("group").filter(
+                        id__in=modifier_ids,
+                        group__product=product,
+                        is_available=True,
+                    )
+                )
+                if len(selected_modifiers) != len(set(modifier_ids)):
+                    return Response(
+                        {"error": f"Invalid modifier selected for {product.name}."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                modifier_total = sum(
+                    (modifier.extra_price for modifier in selected_modifiers),
+                    Decimal("0.00"),
+                )
+            modifier_error = validate_product_modifiers(
+                product,
+                selected_modifiers,
+            )
+            if modifier_error:
+                return Response(
+                    {"error": modifier_error},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            unit_price = product.price + modifier_total
+            calculated_subtotal += unit_price * qty
+            modifier_note = ", ".join(
+                f"{modifier.group.name}: {modifier.name}"
+                for modifier in selected_modifiers
+            )
+            special_instructions = item_data.get("special_instructions", "")
+            if modifier_note:
+                special_instructions = (
+                    f"{modifier_note}\n{special_instructions}".strip()
+                )
             
             order_items_to_create.append({
                 "product": product,
                 "quantity": qty,
-                "unit_price": product.price,
-                "special_instructions": item_data.get("special_instructions", "")
+                "unit_price": unit_price,
+                "special_instructions": special_instructions,
             })
 
         # Final amounts (CALCULATED ON SERVER FOR SECURITY)
@@ -389,6 +429,24 @@ class CheckoutView(APIView):
             {"error": "Invalid payment method"}, 
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+def validate_product_modifiers(product, selected_modifiers):
+    selected_by_group = {}
+    for modifier in selected_modifiers:
+        selected_by_group.setdefault(modifier.group_id, []).append(modifier)
+
+    groups = ModifierGroup.objects.filter(product=product)
+    for group in groups:
+        selected = selected_by_group.get(group.id, [])
+        if group.is_required and not selected:
+            return f"{group.name} is required for {product.name}."
+        if len(selected) > group.max_selections:
+            return (
+                f"Select up to {group.max_selections} option(s) "
+                f"for {group.name}."
+            )
+    return ""
 
 
 class MerchantOrderActionView(APIView):

@@ -2,8 +2,6 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.catalog.models import Product
-
 from .models import CustomerCart, CustomerCartItem
 
 
@@ -18,6 +16,13 @@ class CartItemMutationSerializer(serializers.Serializer):
 
 class CartSyncItemSerializer(CartItemMutationSerializer):
     product_id = serializers.UUIDField()
+    line_key = serializers.CharField(required=False, allow_blank=True, max_length=1500)
+    modifier_item_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        max_length=30,
+    )
 
 
 class CartSyncBasketSerializer(serializers.Serializer):
@@ -40,32 +45,38 @@ class CartSyncSerializer(serializers.Serializer):
 
 
 class CustomerCartItemSerializer(serializers.ModelSerializer):
+    line_key = serializers.CharField(read_only=True)
     product_id = serializers.UUIDField(source="product.id", read_only=True)
     name = serializers.CharField(source="product.name", read_only=True)
-    price = serializers.DecimalField(
+    base_price = serializers.DecimalField(
         source="product.price",
         max_digits=10,
         decimal_places=2,
         read_only=True,
     )
+    price = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
     available = serializers.SerializerMethodField()
     requires_prescription = serializers.BooleanField(
         source="product.requires_prescription",
         read_only=True,
     )
+    modifiers = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerCartItem
         fields = (
             "product_id",
+            "line_key",
             "name",
+            "base_price",
             "price",
             "image",
             "quantity",
             "special_instructions",
             "available",
             "requires_prescription",
+            "modifiers",
         )
 
     def get_image(self, item):
@@ -76,7 +87,29 @@ class CustomerCartItemSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
     def get_available(self, item):
-        return bool(item.product.in_stock and not item.product.requires_prescription)
+        modifiers_available = all(
+            modifier.is_available for modifier in item.modifiers.all()
+        )
+        return bool(item.product.in_stock and modifiers_available)
+
+    def get_price(self, item):
+        modifier_total = sum(
+            (modifier.extra_price for modifier in item.modifiers.all()),
+            Decimal("0.00"),
+        )
+        return str(item.product.price + modifier_total)
+
+    def get_modifiers(self, item):
+        return [
+            {
+                "id": str(modifier.id),
+                "group_id": str(modifier.group_id),
+                "group_name": modifier.group.name,
+                "name": modifier.name,
+                "extra_price": str(modifier.extra_price),
+            }
+            for modifier in item.modifiers.all()
+        ]
 
 
 class CustomerCartSerializer(serializers.ModelSerializer):
@@ -105,7 +138,20 @@ class CustomerCartSerializer(serializers.ModelSerializer):
 
     def get_subtotal(self, cart):
         total = sum(
-            (item.product.price * item.quantity for item in cart.items.all()),
+            (
+                (
+                    item.product.price
+                    + sum(
+                        (
+                            modifier.extra_price
+                            for modifier in item.modifiers.all()
+                        ),
+                        Decimal("0.00"),
+                    )
+                )
+                * item.quantity
+                for item in cart.items.all()
+            ),
             Decimal("0.00"),
         )
         return str(total)

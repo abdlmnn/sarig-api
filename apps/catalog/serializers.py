@@ -6,7 +6,7 @@ from .models import Category, CategoryTemplate, InventoryMode, MedicineReference
 class ModifierItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModifierItem
-        fields = ["id", "name", "extra_price", "is_available"]
+        fields = ["id", "linked_product", "name", "extra_price", "is_available"]
 
 
 class ModifierGroupSerializer(serializers.ModelSerializer):

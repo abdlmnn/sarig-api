@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from uuid import UUID
 
@@ -29,7 +30,16 @@ from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
 
-from .models import Category, CategoryTemplate, InventoryMode, MedicineReference, Product, ProductReference
+from .models import (
+    Category,
+    CategoryTemplate,
+    InventoryMode,
+    MedicineReference,
+    ModifierGroup,
+    ModifierItem,
+    Product,
+    ProductReference,
+)
 from .serializers import CategorySerializer, CategoryTemplateSerializer, MedicineReferenceSerializer, ProductReferenceSerializer, ProductSerializer
 
 
@@ -246,8 +256,34 @@ def product_payload(product, request):
         "requires_prescription": product.requires_prescription,
         "medicine_reference": str(product.medicine_reference_id) if product.medicine_reference_id else "",
         "preparation_time_minutes": product.preparation_time_minutes,
+        "modifier_groups": modifier_groups_payload(product),
         "updated_at": product.updated_at.isoformat(),
     }
+
+
+def modifier_groups_payload(product):
+    return [
+        {
+            "id": str(group.id),
+            "name": group.name,
+            "is_required": group.is_required,
+            "max_selections": group.items.filter(is_available=True).count(),
+            "items": [
+                {
+                    "id": str(item.id),
+                    "linked_product": str(item.linked_product_id) if item.linked_product_id else "",
+                    "image_url": product_image_url(item.linked_product, request)
+                    if item.linked_product_id
+                    else "",
+                    "name": item.name,
+                    "extra_price": str(item.extra_price),
+                    "is_available": item.is_available,
+                }
+                for item in group.items.all()
+            ],
+        }
+        for group in product.modifier_groups.all()
+    ]
 
 
 def product_image_url(product, request):
@@ -270,6 +306,103 @@ def mutable_request_data(data):
         for key, value in normalized.items()
         if value not in (None, "")
     }
+
+
+def parse_modifier_groups_payload(raw_value, store=None):
+    if raw_value in (None, ""):
+        return None, ""
+
+    try:
+        groups = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (TypeError, json.JSONDecodeError):
+        return None, "Use a valid modifier group list."
+
+    if not isinstance(groups, list):
+        return None, "Use a valid modifier group list."
+
+    normalized_groups = []
+    for group in groups[:12]:
+        if not isinstance(group, dict):
+            return None, "Each modifier group must be an object."
+        name = str(group.get("name", "")).strip()
+        if not name:
+            continue
+        try:
+            max_selections = int(group.get("max_selections") or 1)
+        except (TypeError, ValueError):
+            return None, f"{name} has an invalid max selection value."
+        max_selections = min(max(max_selections, 1), 20)
+
+        items = []
+        raw_items = group.get("items", [])
+        if not isinstance(raw_items, list):
+            return None, f"{name} options must be a list."
+        for item in raw_items[:40]:
+            if not isinstance(item, dict):
+                return None, f"{name} has an invalid option."
+            item_name = str(item.get("name", "")).strip()
+            if not item_name:
+                continue
+            try:
+                extra_price = Decimal(str(item.get("extra_price") or "0"))
+            except Exception:
+                return None, f"{item_name} has an invalid price."
+            if extra_price < 0:
+                return None, f"{item_name} price cannot be negative."
+            linked_product = None
+            linked_product_id = str(item.get("linked_product") or "").strip()
+            if linked_product_id:
+                linked_product = Product.objects.filter(
+                    id=linked_product_id,
+                    category__store=store,
+                    is_active=True,
+                ).first()
+                if not linked_product:
+                    return None, f"{item_name} uses an invalid product link."
+            items.append(
+                {
+                    "name": item_name[:100],
+                    "extra_price": extra_price,
+                    "is_available": bool(item.get("is_available", True)),
+                    "linked_product": linked_product,
+                }
+            )
+        if items:
+            normalized_groups.append(
+                {
+                    "name": name[:100],
+                    "is_required": bool(group.get("is_required", False)),
+                    "max_selections": min(max_selections, len(items)),
+                    "items": items,
+                }
+            )
+    return normalized_groups, ""
+
+
+def replace_product_modifier_groups(product, groups):
+    product.modifier_groups.all().delete()
+    if not groups:
+        return
+
+    for group_data in groups:
+        group = ModifierGroup.objects.create(
+            product=product,
+            name=group_data["name"],
+            is_required=group_data["is_required"],
+            max_selections=group_data["max_selections"],
+        )
+        ModifierItem.objects.bulk_create(
+            [
+                ModifierItem(
+                    group=group,
+                    name=item["name"],
+                    extra_price=item["extra_price"],
+                    is_available=item["is_available"],
+                    linked_product=item["linked_product"],
+                )
+                for item in group_data["items"]
+            ]
+        )
 
 
 def category_payload(category):
@@ -517,7 +650,16 @@ class ProductManagementListView(APIView):
         page = max(int(request.query_params.get("page", "1") or 1), 1)
         page_size = min(max(int(request.query_params.get("page_size", "10") or 10), 1), 50)
 
-        base_products = Product.objects.select_related("category").filter(category__store=store)
+        base_products = (
+            Product.objects.select_related("category")
+            .prefetch_related(
+                Prefetch(
+                    "modifier_groups__items",
+                    queryset=ModifierItem.objects.select_related("linked_product"),
+                )
+            )
+            .filter(category__store=store)
+        )
         all_products = base_products
         filtered_products = base_products
 
@@ -613,6 +755,12 @@ class ProductManagementListView(APIView):
             return Response({"category": "Select a valid category for this store."}, status=400)
 
         data = mutable_request_data(request.data)
+        modifier_groups, modifier_error = parse_modifier_groups_payload(
+            data.pop("modifier_groups", None),
+            store,
+        )
+        if modifier_error:
+            return Response({"modifier_groups": modifier_error}, status=400)
         data["category"] = str(category.id)
         data["product_type"] = data.get("product_type") or "food"
         data["inventory_mode"] = data.get("inventory_mode") or "none"
@@ -637,6 +785,8 @@ class ProductManagementListView(APIView):
         serializer = ProductSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
+        if store.vertical.slug == "restaurant":
+            replace_product_modifier_groups(product, modifier_groups)
 
         return Response(product_payload(product, request), status=status.HTTP_201_CREATED)
 
@@ -646,7 +796,12 @@ def store_product_or_none(user, product_id):
     if not store:
         return None, None
 
-    product = Product.objects.select_related("category").filter(
+    product = Product.objects.select_related("category").prefetch_related(
+        Prefetch(
+            "modifier_groups__items",
+            queryset=ModifierItem.objects.select_related("linked_product"),
+        ),
+    ).filter(
         id=product_id,
         category__store=store,
     ).first()
@@ -665,6 +820,12 @@ class ProductManagementDetailView(APIView):
             return Response({"detail": "Product not found."}, status=404)
 
         data = mutable_request_data(request.data)
+        modifier_groups, modifier_error = parse_modifier_groups_payload(
+            data.pop("modifier_groups", None),
+            store,
+        )
+        if modifier_error:
+            return Response({"modifier_groups": modifier_error}, status=400)
         category_id = data.get("category")
         if category_id:
             category = Category.objects.filter(id=category_id, store=store, is_active=True).first()
@@ -683,6 +844,8 @@ class ProductManagementDetailView(APIView):
         serializer = ProductSerializer(product, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
+        if store.vertical.slug == "restaurant" and modifier_groups is not None:
+            replace_product_modifier_groups(product, modifier_groups)
 
         return Response(product_payload(product, request))
 
@@ -895,6 +1058,11 @@ class GlobalProductSearchView(APIView):
             "category",
             "category__store",
             "category__store__vertical",
+        ).prefetch_related(
+            Prefetch(
+                "modifier_groups__items",
+                queryset=ModifierItem.objects.select_related("linked_product"),
+            ),
         ).filter(
             is_active=True,
             is_available=True,
@@ -1015,11 +1183,37 @@ class GlobalProductSearchView(APIView):
             "image": product_image_url(product, request),
             "product_type": product.product_type,
             "unit_type": product.unit_type,
+            "is_available": product.is_available,
+            "availability_status": "AVAILABLE"
+            if product.is_available and product.is_active
+            else "UNAVAILABLE",
             "brand_name": product.brand_name or "",
             "generic_name": product.generic_name or "",
             "dosage": product.dosage or "",
             "requires_prescription": product.requires_prescription,
             "preparation_time_minutes": product.preparation_time_minutes,
+            "modifier_groups": [
+                {
+                    "id": str(group.id),
+                    "name": group.name,
+                    "is_required": group.is_required,
+                    "max_selections": group.items.filter(is_available=True).count(),
+                    "items": [
+                        {
+                            "id": str(item.id),
+                            "linked_product": str(item.linked_product_id) if item.linked_product_id else "",
+                            "image_url": product_image_url(item.linked_product, request)
+                            if item.linked_product_id
+                            else "",
+                            "name": item.name,
+                            "extra_price": float(item.extra_price),
+                            "is_available": item.is_available,
+                        }
+                        for item in group.items.all()
+                    ],
+                }
+                for group in product.modifier_groups.all()
+            ],
             "category": {
                 "name": product.category.name,
                 "slug": product.category.slug,
@@ -1353,11 +1547,56 @@ class PublicStoreProductsView(APIView):
         filters, error = GlobalProductSearchView().parse_filters(request)
         if error:
             return error
-        store_products = GlobalProductSearchView.base_queryset().filter(
+        store_products = Product.objects.select_related(
+            "category",
+            "category__store",
+            "category__store__vertical",
+        ).prefetch_related(
+            Prefetch(
+                "modifier_groups__items",
+                queryset=ModifierItem.objects.select_related("linked_product"),
+            ),
+        ).filter(
+            is_active=True,
+            category__is_active=True,
             category__store_id=store.id,
+            category__store__is_active=True,
+            category__store__vertical__is_active=True,
         )
-        products = GlobalProductSearchView().product_queryset(filters).filter(
-            category__store_id=store.id,
+        products = store_products
+        if filters["query"]:
+            products = products.filter(
+                Q(name__icontains=filters["query"])
+                | Q(description__icontains=filters["query"])
+                | Q(brand_name__icontains=filters["query"])
+                | Q(generic_name__icontains=filters["query"])
+            )
+        if filters["category"]:
+            products = products.filter(category__slug=filters["category"])
+        if filters["min_price"] is not None:
+            products = products.filter(price__gte=filters["min_price"])
+        if filters["max_price"] is not None:
+            products = products.filter(price__lte=filters["max_price"])
+        availability_order = Case(
+            When(
+                Q(is_available=True)
+                & (Q(track_inventory=False) | Q(stock_quantity__gt=0)),
+                then=Value(0),
+            ),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        ordering = {
+            "relevance": ("name", "price"),
+            "price_low": ("price", "name"),
+            "price_high": ("-price", "name"),
+            "rating": ("name",),
+            "nearest": ("name",),
+        }
+        products = products.order_by(
+            availability_order,
+            "category__order",
+            *ordering[filters["sort"]],
         )
         total_items = products.count()
         start = (filters["page"] - 1) * filters["page_size"]
@@ -1371,9 +1610,13 @@ class PublicStoreProductsView(APIView):
             (total_items + filters["page_size"] - 1) // filters["page_size"],
         )
         categories = (
-            store_products.values("category__name", "category__slug")
+            store_products.values(
+                "category__name",
+                "category__slug",
+                "category__order",
+            )
             .annotate(product_count=Count("id"))
-            .order_by("category__name")
+            .order_by("category__order", "category__name")
         )
         return Response(
             {
