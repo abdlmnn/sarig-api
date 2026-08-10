@@ -256,12 +256,12 @@ def product_payload(product, request):
         "requires_prescription": product.requires_prescription,
         "medicine_reference": str(product.medicine_reference_id) if product.medicine_reference_id else "",
         "preparation_time_minutes": product.preparation_time_minutes,
-        "modifier_groups": modifier_groups_payload(product),
+        "modifier_groups": modifier_groups_payload(product, request),
         "updated_at": product.updated_at.isoformat(),
     }
 
 
-def modifier_groups_payload(product):
+def modifier_groups_payload(product, request):
     return [
         {
             "id": str(group.id),

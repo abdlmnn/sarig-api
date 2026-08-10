@@ -3,7 +3,14 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.catalog.models import Category, InventoryMode, Product, ProductType
+from apps.catalog.models import (
+    Category,
+    InventoryMode,
+    ModifierGroup,
+    ModifierItem,
+    Product,
+    ProductType,
+)
 from apps.catalog.serializers import ProductSerializer
 from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store
@@ -141,6 +148,37 @@ class CatalogProductManagementRouteTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["summary"]["total_products"], 1)
         self.assertEqual(response.data["products"][0]["name"], "Chicken Pastil")
+
+    def test_catalog_product_management_route_returns_linked_modifier_items(self):
+        self.client.force_authenticate(self.merchant)
+        product = Product.objects.get(name="Chicken Pastil")
+        linked_product = Product.objects.create(
+            category=self.category,
+            name="Extra Rice",
+            price=Decimal("20.00"),
+        )
+        group = ModifierGroup.objects.create(product=product, name="Add-ons")
+        ModifierItem.objects.create(
+            group=group,
+            linked_product=linked_product,
+            name="Extra Rice",
+            extra_price=Decimal("20.00"),
+        )
+
+        response = self.client.get("/api/v1/catalog/products/manage/")
+
+        self.assertEqual(response.status_code, 200)
+        product_payload = next(
+            item
+            for item in response.data["products"]
+            if item["name"] == "Chicken Pastil"
+        )
+        modifier_groups = product_payload["modifier_groups"]
+        self.assertEqual(modifier_groups[0]["name"], "Add-ons")
+        self.assertEqual(
+            modifier_groups[0]["items"][0]["linked_product"],
+            str(linked_product.id),
+        )
 
     def test_restaurant_product_management_patch_updates_product(self):
         self.client.force_authenticate(self.merchant)
