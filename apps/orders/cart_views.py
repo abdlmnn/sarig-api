@@ -212,8 +212,6 @@ def product_cart_error(product):
         return "This store is currently closed."
     if not product.in_stock:
         return "This product is currently unavailable."
-    if product.requires_prescription:
-        return "This product requires a prescription."
     return ""
 
 

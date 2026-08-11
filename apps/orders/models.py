@@ -126,6 +126,34 @@ class OrderItem(models.Model):
         return f"{self.quantity}x {self.product.name} (Order {str(self.order.id)[:8]})"
 
 
+class OrderPrescriptionStatus(models.TextChoices):
+    PENDING_REVIEW = "PENDING_REVIEW", "Pending review"
+    VERIFIED = "VERIFIED", "Verified"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class OrderPrescription(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="prescriptions",
+    )
+    file = models.FileField(upload_to="orders/prescriptions/")
+    status = models.CharField(
+        max_length=20,
+        choices=OrderPrescriptionStatus.choices,
+        default=OrderPrescriptionStatus.PENDING_REVIEW,
+        db_index=True,
+    )
+    pharmacy_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Prescription for order {str(self.order_id)[:8]}"
+
+
 class CustomerCart(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey(

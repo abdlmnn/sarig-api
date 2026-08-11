@@ -1,6 +1,8 @@
+import json
 from datetime import timedelta
 
 from rest_framework import status, permissions
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.conf import settings
@@ -18,6 +20,7 @@ from apps.orders.models import (
     DeliveryMethod,
     Order,
     OrderItem,
+    OrderPrescription,
     OrderStatus,
 )
 from apps.users.permissions import IsCustomer, IsMerchant
@@ -99,12 +102,30 @@ class MerchantOrderDetailView(APIView):
                 "customer",
                 "rider",
                 "rider__rider_profile",
-            ).prefetch_related("items__product", "payment_attempts"),
+            ).prefetch_related("items__product", "payment_attempts", "prescriptions"),
             id=order_id,
             store__owner=request.user,
         )
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+class CustomerOrderDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsCustomer]
+
+    def get(self, request, order_id):
+        order = get_object_or_404(
+            Order.objects.select_related(
+                "store__vertical",
+                "customer",
+                "rider",
+                "rider__rider_profile",
+            ).prefetch_related("items__product", "payment_attempts", "prescriptions"),
+            id=order_id,
+            customer=request.user,
+        )
+
+        return Response(OrderSerializer(order, context={"request": request}).data)
 
 
 class MerchantStoreOrderAnalyticsView(APIView):
@@ -155,11 +176,25 @@ class MerchantStoreOrderAnalyticsView(APIView):
 
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsCustomer]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     throttle_scope = "checkout"
 
     @transaction.atomic
     def post(self, request):
-        data = request.data
+        data = request.data.copy()
+        if "items_json" in data and "items" not in data:
+            try:
+                data["items"] = json.loads(data.get("items_json") or "[]")
+                data.pop("items_json", None)
+            except json.JSONDecodeError:
+                return Response(
+                    {"error": "Invalid checkout items."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        if hasattr(request.FILES, "getlist"):
+            prescription_files = request.FILES.getlist("prescription_files")
+            if prescription_files:
+                data.setlist("prescription_files", prescription_files)
         user = request.user
 
         serializer = CheckoutRequestSerializer(data=data)
@@ -194,6 +229,7 @@ class CheckoutView(APIView):
         # 3. Calculate Totals Server-Side (Security)
         calculated_subtotal = 0
         order_items_to_create = []
+        requires_prescription = False
 
         for item_data in items_data:
             product = get_object_or_404(Product.objects.select_for_update(), id=item_data["product_id"])
@@ -209,11 +245,7 @@ class CheckoutView(APIView):
                     {"error": f"Product {product.name} is currently unavailable."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            if product.requires_prescription:
-                return Response(
-                    {"error": f"Product {product.name} requires a prescription."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            requires_prescription = requires_prescription or product.requires_prescription
             
             qty = item_data["quantity"]
             if product.track_inventory and product.stock_quantity is not None and product.stock_quantity < qty:
@@ -269,6 +301,13 @@ class CheckoutView(APIView):
                 "unit_price": unit_price,
                 "special_instructions": special_instructions,
             })
+
+        prescription_files = data.get("prescription_files", [])
+        if requires_prescription and not prescription_files:
+            return Response(
+                {"error": "Prescription upload is required for this order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Final amounts (CALCULATED ON SERVER FOR SECURITY)
         delivery_method = data["delivery_method"]
@@ -343,6 +382,9 @@ class CheckoutView(APIView):
                 special_instructions=item["special_instructions"]
             )
 
+        for prescription_file in prescription_files:
+            OrderPrescription.objects.create(order=order, file=prescription_file)
+
         CustomerCart.objects.filter(
             customer=user,
             store=store,
@@ -402,7 +444,7 @@ class CheckoutView(APIView):
             return Response({
                 "status": "success",
                 "message": "Order placed via COD.",
-                "order": OrderSerializer(order).data
+                "order": OrderSerializer(order, context={"request": request}).data
             }, status=status.HTTP_201_CREATED)
 
         elif requested_method == PaymentMethod.PAYMONGO:
@@ -427,7 +469,7 @@ class CheckoutView(APIView):
             return Response({
                 "status": "pending",
                 "checkout_url": paymongo_response['checkout_url'],
-                "order": OrderSerializer(order).data
+                "order": OrderSerializer(order, context={"request": request}).data
             }, status=status.HTTP_201_CREATED)
 
         return Response(
