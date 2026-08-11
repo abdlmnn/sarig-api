@@ -1,6 +1,9 @@
 from decimal import Decimal
 
 from rest_framework import serializers
+from django.utils import timezone
+
+from apps.vendors.utils import PH_TZ, store_availability_payload
 
 from .models import CustomerCart, CustomerCartItem
 
@@ -123,10 +126,17 @@ class CustomerCartSerializer(serializers.ModelSerializer):
 
     def get_store(self, cart):
         store = cart.store
+        availability = store_availability_payload(
+            store,
+            timezone.now().astimezone(PH_TZ),
+        )
         return {
             "id": str(store.id),
             "name": store.name,
-            "is_open": bool(store.is_open and store.is_active),
+            "is_open": bool(store.is_active and availability["status"] == "OPEN"),
+            "availability_status": availability["status"],
+            "availability_label": availability["status_label"],
+            "availability_reason": availability["status_reason"],
             "barangay": store.barangay,
             "city": store.city,
             "vertical": {

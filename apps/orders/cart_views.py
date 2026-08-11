@@ -1,11 +1,13 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import ModifierGroup, ModifierItem, Product
 from apps.users.permissions import IsCustomer
+from apps.vendors.utils import PH_TZ, store_availability_payload
 
 from .cart_serializers import (
     CartItemMutationSerializer,
@@ -126,6 +128,13 @@ class CustomerCartSyncView(APIView):
                     {"detail": "A product does not belong to its selected store."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            for product in products.values():
+                error = product_cart_error(product)
+                if error:
+                    return Response(
+                        {"detail": error},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
             validated_baskets.append((basket, products))
 
         if replace:
@@ -198,7 +207,8 @@ class CustomerCartSyncView(APIView):
 
 def product_cart_error(product):
     store = product.category.store
-    if not store.is_active or not store.is_open:
+    availability = store_availability_payload(store, timezone.now().astimezone(PH_TZ))
+    if not store.is_active or availability["status"] != "OPEN":
         return "This store is currently closed."
     if not product.in_stock:
         return "This product is currently unavailable."

@@ -26,6 +26,7 @@ from apps.payments.services import PayMongoService
 from apps.catalog.models import ModifierGroup, ModifierItem, Product
 from apps.vendors.models import Store
 from apps.vendors.permissions import IsMerchantOrAdmin
+from apps.vendors.utils import PH_TZ, store_availability_payload
 from .serializers import CheckoutRequestSerializer, OrderSerializer
 from .services import ACTIVE_STATUSES, build_store_order_activity, merchant_order_summary
 
@@ -180,7 +181,11 @@ class CheckoutView(APIView):
         store = get_object_or_404(Store, id=store_id)
 
         # 2. Advanced Validation
-        if not store.is_open or not store.is_active:
+        availability = store_availability_payload(
+            store,
+            timezone.now().astimezone(PH_TZ),
+        )
+        if not store.is_active or availability["status"] != "OPEN":
             return Response(
                 {"error": "This store is currently closed or inactive."},
                 status=status.HTTP_400_BAD_REQUEST
