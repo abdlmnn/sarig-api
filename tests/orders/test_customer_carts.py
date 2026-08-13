@@ -1,9 +1,10 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.catalog.models import Category, Product, ProductType
+from apps.catalog.models import Category, ModifierGroup, ModifierItem, Product, ProductType
 from apps.orders.models import CustomerCart, CustomerCartItem
 from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store
@@ -154,6 +155,106 @@ class CustomerCartApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(CustomerCartItem.objects.get().quantity, 1)
+
+    def test_sync_accepts_multiple_optional_modifier_choices(self):
+        group = ModifierGroup.objects.create(
+            product=self.product,
+            name="Choose your drink",
+            max_selections=1,
+            is_required=False,
+        )
+        mango = ModifierItem.objects.create(
+            group=group,
+            name="Mango Shake",
+            extra_price=Decimal("45.00"),
+        )
+        tea = ModifierItem.objects.create(
+            group=group,
+            name="Iced Tea",
+            extra_price=Decimal("35.00"),
+        )
+
+        response = self.client.post(
+            "/api/v1/orders/carts/sync/",
+            {
+                "baskets": [
+                    {
+                        "store_id": str(self.store.id),
+                        "items": [
+                            {
+                                "product_id": str(self.product.id),
+                                "quantity": 1,
+                                "modifier_item_ids": [str(mango.id), str(tea.id)],
+                            }
+                        ],
+                    }
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        cart_item = CustomerCartItem.objects.get()
+        self.assertEqual(cart_item.modifiers.count(), 2)
+
+    def test_merge_sync_skips_missing_local_product(self):
+        response = self.client.post(
+            "/api/v1/orders/carts/sync/",
+            {
+                "mode": "MERGE",
+                "baskets": [
+                    {
+                        "store_id": str(self.store.id),
+                        "items": [
+                            {
+                                "product_id": str(uuid4()),
+                                "quantity": 1,
+                            }
+                        ],
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_merge_sync_skips_invalid_local_modifier_line(self):
+        group = ModifierGroup.objects.create(
+            product=self.product,
+            name="Choose your drink",
+            max_selections=1,
+            is_required=True,
+        )
+        ModifierItem.objects.create(
+            group=group,
+            name="Mango Shake",
+            extra_price=Decimal("45.00"),
+        )
+
+        response = self.client.post(
+            "/api/v1/orders/carts/sync/",
+            {
+                "mode": "MERGE",
+                "baskets": [
+                    {
+                        "store_id": str(self.store.id),
+                        "items": [
+                            {
+                                "product_id": str(self.product.id),
+                                "quantity": 1,
+                                "modifier_item_ids": [str(uuid4())],
+                            }
+                        ],
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
 
     def test_cart_rejects_closed_store(self):
         self.store.is_open = False

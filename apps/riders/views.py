@@ -78,6 +78,24 @@ class RiderOrderActionView(APIView):
         order = get_object_or_404(Order, id=order_id)
         user = request.user
 
+        if not user.roles.filter(name="Rider").exists():
+            return Response({"error": "Only riders can manage delivery orders."}, status=status.HTTP_403_FORBIDDEN)
+
+        if action == "accept_offer":
+            from .services import RiderDispatcherService
+            accepted, message = RiderDispatcherService.accept_order_offer(order, user)
+            if not accepted:
+                return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
+            order.broadcast_status_update()
+            return Response({"status": "success", "message": message})
+
+        if action == "decline_offer":
+            from .services import RiderDispatcherService
+            declined, message = RiderDispatcherService.decline_order_offer(order, user)
+            if not declined:
+                return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"status": "success", "message": message})
+
         # 1. Security: Is this the rider assigned to this order?
         if order.rider != user:
             return Response(

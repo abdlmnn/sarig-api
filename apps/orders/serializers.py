@@ -1,9 +1,27 @@
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 from rest_framework import serializers
 from apps.common.validators import validate_document_upload
 
-from .models import DeliveryMethod, Order, OrderItem
+from .models import DeliveryMethod, DeliveryOption, Order, OrderItem
 from .services import order_tracking_payload
 from apps.payments.models import PaymentMethod
+
+
+class CoordinateField(serializers.Field):
+    default_error_messages = {"invalid": "Enter a valid coordinate."}
+
+    def to_internal_value(self, data):
+        try:
+            value = Decimal(str(data))
+            if not value.is_finite():
+                self.fail("invalid")
+            return value.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError):
+            self.fail("invalid")
+
+    def to_representation(self, value):
+        return str(value)
 
 
 class CheckoutItemSerializer(serializers.Serializer):
@@ -27,17 +45,12 @@ class CheckoutRequestSerializer(serializers.Serializer):
     delivery_method = serializers.ChoiceField(
         choices=DeliveryMethod.choices, default=DeliveryMethod.DELIVERY
     )
+    delivery_option = serializers.ChoiceField(
+        choices=DeliveryOption.choices, default=DeliveryOption.STANDARD
+    )
     address_text = serializers.CharField(required=False, allow_blank=True, max_length=1000)
-    latitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        required=False,
-    )
-    longitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        required=False,
-    )
+    latitude = CoordinateField(required=False)
+    longitude = CoordinateField(required=False)
     promo_code = serializers.CharField(required=False, allow_blank=True, max_length=64)
     prescription_files = serializers.ListField(
         child=serializers.FileField(),

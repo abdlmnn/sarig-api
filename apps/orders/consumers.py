@@ -104,3 +104,26 @@ class OrderConsumer(AsyncWebsocketConsumer):
             "remaining_minutes": event.get("remaining_minutes"),
             "distance_km": event.get("distance_km")
         }))
+
+
+class RiderOfferConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        user = self.scope.get("user")
+        if not user or not user.is_authenticated or not await self._is_rider(user):
+            await self.close(code=4403)
+            return
+
+        self.rider_group_name = f"rider_{user.id}"
+        await self.channel_layer.group_add(self.rider_group_name, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, "rider_group_name"):
+            await self.channel_layer.group_discard(self.rider_group_name, self.channel_name)
+
+    async def delivery_offer(self, event):
+        await self.send(text_data=json.dumps(event["data"]))
+
+    @database_sync_to_async
+    def _is_rider(self, user):
+        return user.roles.filter(name="Rider").exists()

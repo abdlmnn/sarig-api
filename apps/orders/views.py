@@ -5,12 +5,10 @@ from rest_framework import status, permissions
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from django.conf import settings
 from django.db import transaction
 from django.db.models import CharField, Count, F, Q, Sum
 from django.db.models.functions import TruncDate
 from django.db.models.functions import Cast
-from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import logging
@@ -26,11 +24,10 @@ from apps.orders.models import (
 from apps.users.permissions import IsCustomer, IsMerchant
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
-from apps.catalog.models import ModifierGroup, ModifierItem, Product
 from apps.vendors.models import Store
 from apps.vendors.permissions import IsMerchantOrAdmin
-from apps.vendors.utils import PH_TZ, store_availability_payload
 from .serializers import CheckoutRequestSerializer, OrderSerializer
+from .pricing import CheckoutPricingError, calculate_checkout_pricing
 from .services import ACTIVE_STATUSES, build_store_order_activity, merchant_order_summary
 
 
@@ -174,6 +171,25 @@ class MerchantStoreOrderAnalyticsView(APIView):
         )
 
 
+class CheckoutQuoteView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsCustomer]
+    throttle_scope = "checkout_quote"
+
+    def post(self, request):
+        serializer = CheckoutRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        store = get_object_or_404(Store, id=data["store_id"])
+        try:
+            pricing = calculate_checkout_pricing(store, data)
+        except CheckoutPricingError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(pricing.quote_payload())
+
+
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsCustomer]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
@@ -211,169 +227,58 @@ class CheckoutView(APIView):
             )
         data = serializer.validated_data
         store_id = data["store_id"]
-        items_data = data["items"]
 
         store = get_object_or_404(Store, id=store_id)
 
-        # 2. Advanced Validation
-        availability = store_availability_payload(
-            store,
-            timezone.now().astimezone(PH_TZ),
-        )
-        if not store.is_active or availability["status"] != "OPEN":
+        try:
+            pricing = calculate_checkout_pricing(
+                store,
+                data,
+                lock_products=True,
+            )
+        except CheckoutPricingError as exc:
             return Response(
-                {"error": "This store is currently closed or inactive."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # 3. Calculate Totals Server-Side (Security)
-        calculated_subtotal = 0
-        order_items_to_create = []
-        requires_prescription = False
-
-        for item_data in items_data:
-            product = get_object_or_404(Product.objects.select_for_update(), id=item_data["product_id"])
-            
-            # Verify product belongs to store
-            if product.category.store != store:
-                return Response(
-                    {"error": f"Product {product.name} does not belong to this store."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if not product.in_stock:
-                return Response(
-                    {"error": f"Product {product.name} is currently unavailable."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            requires_prescription = requires_prescription or product.requires_prescription
-            
-            qty = item_data["quantity"]
-            if product.track_inventory and product.stock_quantity is not None and product.stock_quantity < qty:
-                return Response(
-                    {"error": f"Insufficient stock for {product.name}."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            modifier_ids = item_data.get("modifier_item_ids", [])
-            selected_modifiers = []
-            modifier_total = Decimal("0.00")
-            if modifier_ids:
-                selected_modifiers = list(
-                    ModifierItem.objects.select_related("group").filter(
-                        id__in=modifier_ids,
-                        group__product=product,
-                        is_available=True,
-                    )
-                )
-                if len(selected_modifiers) != len(set(modifier_ids)):
-                    return Response(
-                        {"error": f"Invalid modifier selected for {product.name}."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                modifier_total = sum(
-                    (modifier.extra_price for modifier in selected_modifiers),
-                    Decimal("0.00"),
-                )
-            modifier_error = validate_product_modifiers(
-                product,
-                selected_modifiers,
-            )
-            if modifier_error:
-                return Response(
-                    {"error": modifier_error},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            unit_price = product.price + modifier_total
-            calculated_subtotal += unit_price * qty
-            modifier_note = ", ".join(
-                f"{modifier.group.name}: {modifier.name}"
-                for modifier in selected_modifiers
-            )
-            special_instructions = item_data.get("special_instructions", "")
-            if modifier_note:
-                special_instructions = (
-                    f"{modifier_note}\n{special_instructions}".strip()
-                )
-            
-            order_items_to_create.append({
-                "product": product,
-                "quantity": qty,
-                "unit_price": unit_price,
-                "special_instructions": special_instructions,
-            })
-
-        prescription_files = data.get("prescription_files", [])
-        if requires_prescription and not prescription_files:
-            return Response(
-                {"error": "Prescription upload is required for this order."},
+                {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Final amounts (CALCULATED ON SERVER FOR SECURITY)
-        delivery_method = data["delivery_method"]
-        
-        # 1. System Fee (Flat 10 PHP)
-        system_fee = Decimal("10.00")
-        
-        # 2. Delivery Fee (Base 40 + distance based)
-        if delivery_method == DeliveryMethod.PICKUP:
-            delivery_fee = Decimal("0.00")
-        else:
-            from apps.locations.services import calculate_delivery_fee, route_estimate
-
-            estimate = route_estimate(
-                {"latitude": store.latitude, "longitude": store.longitude},
-                {"latitude": data["latitude"], "longitude": data["longitude"]},
+        prescription_files = data.get("prescription_files", [])
+        if pricing.requires_prescription and not prescription_files:
+            return Response(
+                {
+                    "error": (
+                        f"Product {pricing.prescription_product_name} "
+                        "requires a prescription."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            if float(estimate["distance_km"]) > settings.DELIVERY_MAX_DISTANCE_KM:
-                return Response(
-                    {"error": "Delivery address is outside the supported distance."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            delivery_fee = calculate_delivery_fee(estimate["distance_km"])
-        
-        # --- Handle Promo Code ---
-        promo_code_str = data.get("promo_code")
-        promo_obj = None
-        discount_amount = Decimal("0.00")
-        
-        if promo_code_str:
-            from apps.marketing.models import PromoCode
-            promo_obj = PromoCode.objects.filter(code__iexact=promo_code_str).first()
-            if promo_obj:
-                is_valid, error_msg = promo_obj.is_valid(calculated_subtotal)
-                if not is_valid:
-                    return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
-                
-                discount_amount = promo_obj.calculate_discount(calculated_subtotal)
-            else:
-                return Response({"error": "Invalid promo code."}, status=status.HTTP_400_BAD_REQUEST)
-
-        total_amount = (calculated_subtotal + Decimal(str(delivery_fee)) + Decimal(str(system_fee))) - discount_amount
-        total_amount = max(total_amount, Decimal("0.00")) # Never negative
 
         # 4. Create the Order
         order = Order.objects.create(
             customer=user,
             store=store,
-            delivery_method=delivery_method,
+            delivery_method=data["delivery_method"],
+            delivery_option=data.get("delivery_option", "STANDARD"),
             delivery_address_text=data.get("address_text", ""),
             delivery_latitude=data.get("latitude", store.latitude),
             delivery_longitude=data.get("longitude", store.longitude),
-            subtotal=calculated_subtotal,
-            delivery_fee=delivery_fee,
-            system_fee=system_fee,
-            discount_amount=discount_amount,
-            promo_code=promo_obj,
-            total_amount=total_amount
+            subtotal=pricing.subtotal,
+            delivery_fee=pricing.delivery_fee,
+            system_fee=pricing.system_fee,
+            discount_amount=pricing.discount_amount,
+            promo_code=pricing.promo,
+            total_amount=pricing.total_amount,
         )
 
         # Increment usage count if order is created successfully
-        if promo_obj:
-            PromoCode.objects.filter(id=promo_obj.id).update(usage_count=F('usage_count') + 1)
+        if pricing.promo:
+            type(pricing.promo).objects.filter(id=pricing.promo.id).update(
+                usage_count=F("usage_count") + 1
+            )
 
         # 5. Create Order Items
-        for item in order_items_to_create:
+        for item in pricing.order_items:
             OrderItem.objects.create(
                 order=order,
                 product=item["product"],
@@ -476,26 +381,6 @@ class CheckoutView(APIView):
             {"error": "Invalid payment method"}, 
             status=status.HTTP_400_BAD_REQUEST
         )
-
-
-def validate_product_modifiers(product, selected_modifiers):
-    selected_by_group = {}
-    for modifier in selected_modifiers:
-        selected_by_group.setdefault(modifier.group_id, []).append(modifier)
-
-    groups = ModifierGroup.objects.filter(product=product)
-    for group in groups:
-        selected = selected_by_group.get(group.id, [])
-        if group.is_required and not selected:
-            return f"{group.name} is required for {product.name}."
-        if len(selected) > group.max_selections:
-            return (
-                f"Select up to {group.max_selections} option(s) "
-                f"for {group.name}."
-            )
-    return ""
-
-
 class MerchantOrderActionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     throttle_scope = "checkout"
@@ -550,6 +435,10 @@ class MerchantOrderActionView(APIView):
             from apps.users.notifications import PushNotificationService
             PushNotificationService.notify_order_status(order.customer, "PREPARING", order.id)
 
+            if order.delivery_method == "DELIVERY":
+                from apps.riders.services import RiderDispatcherService
+                RiderDispatcherService.maybe_pre_dispatch_order(order)
+
             return Response({
                 "status": "success",
                 "message": "Order is now preparing.",
@@ -574,7 +463,7 @@ class MerchantOrderActionView(APIView):
             # TRIGGER DISPATCHER ONLY FOR HOME DELIVERY
             if order.delivery_method == "DELIVERY":
                 from apps.riders.services import RiderDispatcherService
-                RiderDispatcherService.assign_rider_to_order(order)
+                RiderDispatcherService.dispatch_ready_order(order)
             else:
                 # For PICKUP, just notify customer they can now walk to the store
                 PushNotificationService.send_push(

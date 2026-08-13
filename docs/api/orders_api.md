@@ -7,6 +7,26 @@ Base URL:
 
 ## CHECKOUT
 
+### Get Final Quote
+`POST /checkout/quote/`
+**Customer authentication required**
+
+Uses the same request body and server-side calculation as checkout, excluding prescription files. It validates current store availability, products, inventory, modifiers, delivery range, and promo codes without creating an order.
+
+```json
+{
+  "subtotal": "200.00",
+  "delivery_fee": "64.00",
+  "service_fee": "10.00",
+  "discount_amount": "0.00",
+  "total_amount": "274.00",
+  "distance_km": "2.40",
+  "estimated_minutes": 20
+}
+```
+
+Checkout always recalculates these values before creating the order. A quote does not reserve inventory or guarantee a stale price.
+
 ### Process Checkout
 `POST /checkout/`
 **Auth required**

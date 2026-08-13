@@ -15,6 +15,7 @@ from .cart_serializers import (
     CustomerCartSerializer,
 )
 from .models import CustomerCart, CustomerCartItem
+from .pricing import modifier_group_limit
 
 
 def customer_carts(user):
@@ -116,25 +117,51 @@ class CustomerCartSyncView(APIView):
             }
             product_ids = {item["product_id"] for item in basket["items"]}
             if len(products) != len(product_ids):
-                return Response(
-                    {"detail": "One or more products no longer exist."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                if not replace:
+                    basket["items"] = [
+                        item for item in basket["items"] if item["product_id"] in products
+                    ]
+                    if not basket["items"]:
+                        continue
+                    product_ids = {item["product_id"] for item in basket["items"]}
+                else:
+                    return Response(
+                        {"detail": "One or more products no longer exist."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
             if any(
                 product.category.store_id != basket["store_id"]
                 for product in products.values()
             ):
-                return Response(
-                    {"detail": "A product does not belong to its selected store."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                if not replace:
+                    products = {
+                        product_id: product
+                        for product_id, product in products.items()
+                        if product.category.store_id == basket["store_id"]
+                    }
+                    basket["items"] = [
+                        item for item in basket["items"] if item["product_id"] in products
+                    ]
+                    if not basket["items"]:
+                        continue
+                else:
+                    return Response(
+                        {"detail": "A product does not belong to its selected store."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            basket_has_unavailable_product = False
             for product in products.values():
                 error = product_cart_error(product)
                 if error:
+                    if not replace:
+                        basket_has_unavailable_product = True
+                        break
                     return Response(
                         {"detail": error},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
+            if basket_has_unavailable_product:
+                continue
             validated_baskets.append((basket, products))
 
         if replace:
@@ -164,6 +191,8 @@ class CustomerCartSyncView(APIView):
                     item.get("modifier_item_ids", []),
                 )
                 if error:
+                    if not replace:
+                        continue
                     return Response(
                         {"detail": error},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -246,9 +275,9 @@ def validate_cart_modifiers(product, selected_modifiers):
         selected = selected_by_group.get(group.id, [])
         if group.is_required and not selected:
             return f"{group.name} is required for {product.name}."
-        if len(selected) > group.max_selections:
+        if len(selected) > modifier_group_limit(group):
             return (
-                f"Select up to {group.max_selections} option(s) "
+                f"Select up to {modifier_group_limit(group)} option(s) "
                 f"for {group.name}."
             )
     return ""

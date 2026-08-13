@@ -25,6 +25,12 @@ class DeliveryMethod(models.TextChoices):
     PICKUP = "PICKUP", "Self-Pickup"
 
 
+class DeliveryOption(models.TextChoices):
+    SAVER = "SAVER", "Saver"
+    STANDARD = "STANDARD", "Standard"
+    PRIORITY = "PRIORITY", "Priority"
+
+
 class Order(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     delivery_method = models.CharField(
@@ -32,6 +38,12 @@ class Order(models.Model):
         choices=DeliveryMethod.choices,
         default=DeliveryMethod.DELIVERY,
         db_index=True
+    )
+    delivery_option = models.CharField(
+        max_length=20,
+        choices=DeliveryOption.choices,
+        default=DeliveryOption.STANDARD,
+        db_index=True,
     )
     customer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
