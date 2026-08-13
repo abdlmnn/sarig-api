@@ -8,8 +8,62 @@ from rest_framework.test import APIClient
 
 from apps.orders.models import Order, OrderStatus
 from apps.payments.models import PaymentMethod, PaymentStatus, PaymentTransaction
+from apps.payments.services import PayMongoService
 from apps.users.models import User
 from apps.vendors.models import BusinessVertical, Store
+
+
+class PaymentMethodsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    @override_settings(
+        PAYMONGO_USE_MOCK=True,
+        PAYMONGO_ENABLED_PAYMENT_METHODS="GCASH,CARD",
+    )
+    def test_methods_endpoint_uses_mock_configured_methods(self):
+        response = self.client.get("/api/v1/payments/methods/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["paymongo"]["enabled_methods"],
+            ["GCASH", "CARD"],
+        )
+
+    def test_capability_method_parser_normalizes_supported_methods(self):
+        payload = {"data": ["gcash", "paymaya", "card", "grab_pay"]}
+
+        methods = PayMongoService._extract_capability_methods(payload)
+
+        self.assertEqual(methods, ["GCASH", "MAYA", "CARD"])
+
+    def test_capability_method_parser_accepts_root_list_response(self):
+        methods = PayMongoService._extract_capability_methods(
+            ["gcash", "paymaya", "card"]
+        )
+
+        self.assertEqual(methods, ["GCASH", "MAYA", "CARD"])
+
+    @override_settings(
+        PAYMONGO_USE_MOCK=False,
+        PAYMONGO_SECRET_KEY="sk_test_123",
+        PAYMONGO_ENABLED_PAYMENT_METHODS="GCASH,MAYA,CARD",
+    )
+    def test_test_key_uses_configured_methods(self):
+        methods = PayMongoService.get_enabled_payment_methods()
+
+        self.assertEqual(methods, ["GCASH", "MAYA", "CARD"])
+
+    def test_order_query_is_added_to_return_url(self):
+        url = PayMongoService._with_order_query(
+            "http://localhost:3000/orders/payment/success?source=paymongo",
+            "order-123",
+        )
+
+        self.assertEqual(
+            url,
+            "http://localhost:3000/orders/payment/success?source=paymongo&order_id=order-123",
+        )
 
 
 @override_settings(
@@ -22,8 +76,12 @@ from apps.vendors.models import BusinessVertical, Store
 class PayMongoWebhookTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.customer = User.objects.create_user("paycust", "paycust@test.com", "pw12345")
-        self.merchant = User.objects.create_user("paymerch", "paymerch@test.com", "pw12345")
+        self.customer = User.objects.create_user(
+            "paycust", "paycust@test.com", "pw12345"
+        )
+        self.merchant = User.objects.create_user(
+            "paymerch", "paymerch@test.com", "pw12345"
+        )
         vertical, _ = BusinessVertical.objects.get_or_create(
             slug="restaurant",
             defaults={"name": "Restaurant"},
@@ -98,7 +156,9 @@ class PayMongoWebhookTests(TestCase):
     @patch("apps.orders.tasks.auto_cancel_stale_order.apply_async")
     @patch("apps.users.notifications.PushNotificationService.notify_new_order")
     @patch("apps.catalog.services.InventoryService.deduct_stock_for_order")
-    def test_paid_webhook_marks_transaction_success(self, stock_mock, notify_mock, cancel_mock):
+    def test_paid_webhook_marks_transaction_success(
+        self, stock_mock, notify_mock, cancel_mock
+    ):
         stock_mock.return_value = (True, "ok")
         order = self._create_order()
         tx = self._create_transaction(order)
@@ -124,7 +184,9 @@ class PayMongoWebhookTests(TestCase):
     def test_failed_webhook_marks_transaction_failed_and_cancels_order(self):
         order = self._create_order()
         tx = self._create_transaction(order)
-        payload = self._event_payload("checkout_session.payment.failed", tx.external_transaction_id)
+        payload = self._event_payload(
+            "checkout_session.payment.failed", tx.external_transaction_id
+        )
 
         res = self._post_webhook(payload)
 
@@ -137,7 +199,9 @@ class PayMongoWebhookTests(TestCase):
     def test_expired_webhook_marks_transaction_expired_and_cancels_order(self):
         order = self._create_order()
         tx = self._create_transaction(order)
-        payload = self._event_payload("checkout_session.expired", tx.external_transaction_id)
+        payload = self._event_payload(
+            "checkout_session.expired", tx.external_transaction_id
+        )
 
         res = self._post_webhook(payload)
 

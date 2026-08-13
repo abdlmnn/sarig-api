@@ -1,10 +1,16 @@
 from django.contrib import admin
-from .models import Order, OrderItem
+from .models import Order, OrderItem, OrderPrescription
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
     readonly_fields = ('product', 'quantity', 'unit_price', 'total_price')
+
+
+class OrderPrescriptionInline(admin.StackedInline):
+    model = OrderPrescription
+    extra = 0
+    readonly_fields = ("created_at", "updated_at")
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -12,7 +18,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ('status', 'delivery_method', 'created_at')
     search_fields = ('id', 'customer__username', 'store__name', 'rider__username')
     readonly_fields = ('id', 'customer', 'store', 'rider', 'total_amount', 'created_at', 'updated_at')
-    inlines = [OrderItemInline]
+    inlines = [OrderItemInline, OrderPrescriptionInline]
     
     fieldsets = (
         ('Order Info', {

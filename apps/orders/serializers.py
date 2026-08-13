@@ -1,7 +1,27 @@
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 from rest_framework import serializers
-from .models import DeliveryMethod, Order, OrderItem
+from apps.common.validators import validate_document_upload
+
+from .models import DeliveryMethod, DeliveryOption, Order, OrderItem
 from .services import order_tracking_payload
 from apps.payments.models import PaymentMethod
+
+
+class CoordinateField(serializers.Field):
+    default_error_messages = {"invalid": "Enter a valid coordinate."}
+
+    def to_internal_value(self, data):
+        try:
+            value = Decimal(str(data))
+            if not value.is_finite():
+                self.fail("invalid")
+            return value.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError):
+            self.fail("invalid")
+
+    def to_representation(self, value):
+        return str(value)
 
 
 class CheckoutItemSerializer(serializers.Serializer):
@@ -25,18 +45,24 @@ class CheckoutRequestSerializer(serializers.Serializer):
     delivery_method = serializers.ChoiceField(
         choices=DeliveryMethod.choices, default=DeliveryMethod.DELIVERY
     )
+    delivery_option = serializers.ChoiceField(
+        choices=DeliveryOption.choices, default=DeliveryOption.STANDARD
+    )
     address_text = serializers.CharField(required=False, allow_blank=True, max_length=1000)
-    latitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        required=False,
-    )
-    longitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        required=False,
-    )
+    latitude = CoordinateField(required=False)
+    longitude = CoordinateField(required=False)
     promo_code = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    prescription_files = serializers.ListField(
+        child=serializers.FileField(),
+        required=False,
+        allow_empty=True,
+        max_length=5,
+    )
+
+    def validate_prescription_files(self, value):
+        for uploaded_file in value:
+            validate_document_upload(uploaded_file)
+        return value
 
     def validate_latitude(self, value):
         if not (-90 <= value <= 90):
@@ -86,6 +112,7 @@ class OrderSerializer(serializers.ModelSerializer):
     store_vertical_slug = serializers.ReadOnlyField(source="store.vertical.slug")
     tracking = serializers.SerializerMethodField()
     payment = serializers.SerializerMethodField()
+    prescriptions = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -114,6 +141,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "cancel_reason",
             "tracking",
             "payment",
+            "prescriptions",
         ]
         read_only_fields = [
             "id",
@@ -125,6 +153,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "cancel_reason",
             "tracking",
             "payment",
+            "prescriptions",
         ]
 
     def get_tracking(self, order):
@@ -144,3 +173,23 @@ class OrderSerializer(serializers.ModelSerializer):
             "reference": payment.external_transaction_id or "",
             "updated_at": payment.updated_at.isoformat(),
         }
+
+    def get_prescriptions(self, order):
+        request = self.context.get("request")
+        return [
+            {
+                "id": str(prescription.id),
+                "file_name": prescription.file.name.rsplit("/", 1)[-1],
+                "file_url": (
+                    request.build_absolute_uri(prescription.file.url)
+                    if request and prescription.file
+                    else prescription.file.url
+                    if prescription.file
+                    else ""
+                ),
+                "status": prescription.status,
+                "status_label": prescription.get_status_display(),
+                "pharmacy_note": prescription.pharmacy_note,
+            }
+            for prescription in order.prescriptions.all()
+        ]

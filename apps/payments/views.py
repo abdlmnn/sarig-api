@@ -11,8 +11,20 @@ from .services import PayMongoService
 from apps.orders.models import OrderStatus
 from apps.users.notifications import PushNotificationService
 
-
 logger = logging.getLogger(__name__)
+
+
+class PaymentMethodsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(
+            {
+                "paymongo": {
+                    "enabled_methods": PayMongoService.get_enabled_payment_methods()
+                }
+            }
+        )
 
 
 class PayMongoWebhookView(APIView):
@@ -27,8 +39,8 @@ class PayMongoWebhookView(APIView):
     def post(self, request):
         raw_body = request.body
         payload = request.data
-        
-        signature = request.headers.get('Paymongo-Signature')
+
+        signature = request.headers.get("Paymongo-Signature")
         if not self._is_valid_signature(raw_body, signature):
             return Response({"error": "Unauthorized"}, status=403)
 
@@ -55,13 +67,16 @@ class PayMongoWebhookView(APIView):
             # Extract actual payment ID for future refunds
             if payment_id:
                 payment_tx.payment_id = payment_id
-            
+
             payment_tx.status = PaymentStatus.SUCCESS
             payment_tx.save()
 
             # The money is secure! Now we secure the inventory.
             from apps.catalog.services import InventoryService
-            success, message = InventoryService.deduct_stock_for_order(payment_tx.order.id)
+
+            success, message = InventoryService.deduct_stock_for_order(
+                payment_tx.order.id
+            )
 
             if success:
                 # Inventory deducted cleanly!
@@ -69,14 +84,14 @@ class PayMongoWebhookView(APIView):
                 # Note: We NO LONGER set OrderStatus.ACCEPTED here.
                 # The order stays PENDING (Merchant Approval) even if paid.
                 order.save()
-                
+
                 # Trigger real-time alert to Merchant
                 from channels.layers import get_channel_layer
                 from asgiref.sync import async_to_sync
-                
+
                 channel_layer = get_channel_layer()
                 store_group = f"store_{order.store.id}_orders"
-                
+
                 try:
                     async_to_sync(channel_layer.group_send)(
                         store_group,
@@ -85,16 +100,22 @@ class PayMongoWebhookView(APIView):
                             "message": {
                                 "order_id": str(order.id),
                                 "total_amount": str(order.total_amount),
-                                "customer_name": order.customer.get_full_name() or order.customer.username,
-                            }
-                        }
+                                "customer_name": order.customer.get_full_name()
+                                or order.customer.username,
+                            },
+                        },
                     )
                 except Exception as exc:
-                    logger.warning("Failed to broadcast paid order alert for order %s: %s", order.id, exc)
+                    logger.warning(
+                        "Failed to broadcast paid order alert for order %s: %s",
+                        order.id,
+                        exc,
+                    )
 
                 # Handle Auto-Acceptance
                 # Notify Merchant (Push Notification)
                 from apps.users.notifications import PushNotificationService
+
                 PushNotificationService.notify_new_order(order.store.owner, order.id)
 
                 if order.store.auto_accept_orders:
@@ -104,6 +125,7 @@ class PayMongoWebhookView(APIView):
                 else:
                     # Schedule auto-cancellation in 5 minutes (if merchant doesn't accept manually)
                     from apps.orders.tasks import auto_cancel_stale_order
+
                     transaction.on_commit(
                         lambda: auto_cancel_stale_order.apply_async(
                             (str(order.id),), countdown=600
@@ -161,7 +183,9 @@ class PayMongoWebhookView(APIView):
         return None
 
     def _get_transaction(self, data_object, external_id, payment_id):
-        transaction_qs = PaymentTransaction.objects.select_related("order", "order__store", "order__customer")
+        transaction_qs = PaymentTransaction.objects.select_related(
+            "order", "order__store", "order__customer"
+        )
         payment_tx = transaction_qs.filter(external_transaction_id=external_id).first()
         if payment_tx:
             return payment_tx
@@ -171,7 +195,9 @@ class PayMongoWebhookView(APIView):
                 return payment_tx
         order_id = data_object.get("attributes", {}).get("metadata", {}).get("order_id")
         if order_id:
-            payment_tx = transaction_qs.filter(order_id=order_id, status=PaymentStatus.PENDING).first()
+            payment_tx = transaction_qs.filter(
+                order_id=order_id, status=PaymentStatus.PENDING
+            ).first()
             if payment_tx:
                 return payment_tx
         raise PaymentTransaction.DoesNotExist
@@ -201,5 +227,7 @@ class PayMongoWebhookView(APIView):
             return bool(settings.DEBUG)
         if not signature_header:
             return False
-        digest = hmac.new(secret.encode("utf-8"), payload_body, hashlib.sha256).hexdigest()
+        digest = hmac.new(
+            secret.encode("utf-8"), payload_body, hashlib.sha256
+        ).hexdigest()
         return hmac.compare_digest(digest, signature_header.strip())

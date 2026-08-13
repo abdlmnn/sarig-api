@@ -78,6 +78,24 @@ class PushNotificationService:
         )
 
     @classmethod
+    def notify_rider_delivery_offer(cls, rider_user, order):
+        return cls.send_push(
+            rider_user,
+            "New delivery offer",
+            f"Pickup from {order.store.name}. Open Sarig Rider to accept.",
+            {"order_id": str(order.id), "type": "DELIVERY_OFFER"},
+        )
+
+    @classmethod
+    def notify_rider_pickup_ready(cls, rider_user, order):
+        return cls.send_push(
+            rider_user,
+            "Order ready for pickup",
+            f"{order.store.name} is ready for pickup.",
+            {"order_id": str(order.id), "type": "PICKUP_READY"},
+        )
+
+    @classmethod
     def notify_new_message(cls, recipient_user, sender_name, order_id):
         return cls.send_push(
             recipient_user,

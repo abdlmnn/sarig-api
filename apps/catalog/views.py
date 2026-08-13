@@ -16,6 +16,7 @@ from django.db.models import (
     Value,
     When,
 )
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -29,6 +30,7 @@ from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
 from apps.vendors.models import Store
+from apps.vendors.utils import PH_TZ, store_availability_payload
 
 from .models import (
     Category,
@@ -294,6 +296,14 @@ def product_image_url(product, request):
         return request.build_absolute_uri(product.image.url)
     except ValueError:
         return ""
+
+
+def marketplace_store_availability(store):
+    return store_availability_payload(store, timezone.now().astimezone(PH_TZ))
+
+
+def marketplace_store_is_open(store):
+    return marketplace_store_availability(store)["status"] == "OPEN"
 
 
 def mutable_request_data(data):
@@ -1164,6 +1174,7 @@ class GlobalProductSearchView(APIView):
     @staticmethod
     def result_payload(product, request, filters):
         store = product.category.store
+        availability = marketplace_store_availability(store)
         distance = None
         if filters["location"]:
             latitude, longitude = filters["location"]
@@ -1226,11 +1237,10 @@ class GlobalProductSearchView(APIView):
                     "slug": store.vertical.slug,
                 },
                 "rating": float(store.rating),
-                "is_open": store.is_open
-                and store.manual_override not in {
-                    "CLOSED_TEMPORARILY",
-                    "PAUSED_ORDERS",
-                },
+                "is_open": availability["status"] == "OPEN",
+                "availability_status": availability["status"],
+                "availability_label": availability["status_label"],
+                "availability_reason": availability["status_reason"],
                 "barangay": store.barangay,
                 "city": store.city,
             },
@@ -1400,10 +1410,8 @@ class PublicStoreListView(APIView):
                 store.minimum_preparation_minutes or 0
             )
             delivery_fee = float(calculate_delivery_fee(road_distance))
-        is_open = store.is_open and store.manual_override not in {
-            "CLOSED_TEMPORARILY",
-            "PAUSED_ORDERS",
-        }
+        availability = marketplace_store_availability(store)
+        is_open = availability["status"] == "OPEN"
         banner_image = ""
         if store.banner_image:
             try:
@@ -1429,6 +1437,9 @@ class PublicStoreListView(APIView):
             },
             "rating": float(store.rating),
             "is_open": is_open,
+            "availability_status": availability["status"],
+            "availability_label": availability["status_label"],
+            "availability_reason": availability["status_reason"],
             "address": store.street_address,
             "barangay": store.barangay,
             "city": store.city,
