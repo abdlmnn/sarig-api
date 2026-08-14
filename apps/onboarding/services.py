@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -251,6 +252,7 @@ class ApplicationService:
             raise ValidationError("Application must be approved before account setup.")
 
         email = applicant_email(application)
+        validate_password(password)
         user = get_user_model().objects.create_user(
             username=username,
             email=email,
