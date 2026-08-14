@@ -23,6 +23,7 @@ from apps.orders.models import (
     OrderPrescription,
     OrderStatus,
 )
+from apps.common.realtime import broadcast_realtime_event
 from apps.users.permissions import IsCustomer, IsMerchant
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
@@ -367,6 +368,15 @@ class CheckoutView(APIView):
                 )
             except Exception as exc:
                 logger.warning("Failed to broadcast COD order alert for order %s: %s", order.id, exc)
+            
+            broadcast_realtime_event(
+                "order_created",
+                {
+                    "order_id": str(order.id),
+                    "store_id": str(order.store_id),
+                    "status": order.status,
+                },
+            )
             
             # Notify Merchant (Push Notification)
             from apps.users.notifications import PushNotificationService

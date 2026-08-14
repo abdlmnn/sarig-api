@@ -9,6 +9,7 @@ import logging
 from .models import PaymentTransaction, PaymentStatus
 from .services import PayMongoService
 from apps.orders.models import OrderStatus
+from apps.common.realtime import broadcast_realtime_event
 from apps.users.notifications import PushNotificationService
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,15 @@ class PayMongoWebhookView(APIView):
                         order.id,
                         exc,
                     )
+
+                broadcast_realtime_event(
+                    "order_created",
+                    {
+                        "order_id": str(order.id),
+                        "store_id": str(order.store_id),
+                        "status": order.status,
+                    },
+                )
 
                 # Handle Auto-Acceptance
                 # Notify Merchant (Push Notification)
