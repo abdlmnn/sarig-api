@@ -12,6 +12,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.realtime import broadcast_realtime_event
 from apps.riders.services import RiderDispatcherService
 from apps.users.geo import get_lat_lng
 from apps.users.permissions import IsMerchant
@@ -232,6 +233,10 @@ class MerchantStoreStatusView(APIView):
         store.save(update_fields=["manual_override", "manual_override_reason", "updated_at"])
 
         availability = store_availability_payload(store, timezone.now().astimezone(PH_TZ))
+        broadcast_realtime_event(
+            "store_status_changed",
+            {"store_id": str(store.id), **availability},
+        )
         return Response(
             {
                 "store_id": str(store.id),

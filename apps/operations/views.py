@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.orders.models import Order, OrderStatus
+from apps.common.realtime import broadcast_realtime_event
 from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
 from apps.vendors.models import Store
@@ -254,6 +255,15 @@ class AdminMerchantActionView(APIView):
                 "manual_override_reason",
                 "updated_at",
             ]
+        )
+        broadcast_realtime_event(
+            "store_status_changed",
+            {
+                "store_id": str(store.id),
+                "is_active": store.is_active,
+                "manual_override": store.manual_override,
+                "status_reason": store.manual_override_reason,
+            },
         )
         return Response(envelope(merchant_payloads([store])[0], "Merchant updated"))
 
