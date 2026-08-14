@@ -24,7 +24,6 @@ from apps.orders.models import (
     OrderPrescription,
     OrderStatus,
 )
-from apps.common.realtime import broadcast_realtime_event
 from apps.users.permissions import IsCustomer, IsMerchant
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
@@ -348,54 +347,16 @@ class CheckoutView(APIView):
                 status=PaymentStatus.PENDING # COD is pending until delivery
             )
             
-            # Trigger real-time alert to Merchant for COD
-            from channels.layers import get_channel_layer
-            from asgiref.sync import async_to_sync
-            
-            channel_layer = get_channel_layer()
-            store_group = f"store_{order.store.id}_orders"
-            
-            try:
-                async_to_sync(channel_layer.group_send)(
-                    store_group,
-                    {
-                        "type": "order_alert",
-                        "message": {
-                            "order_id": str(order.id),
-                            "total_amount": str(order.total_amount),
-                            "customer_name": order.customer.get_full_name() or order.customer.username,
-                        }
-                    }
-                )
-            except Exception as exc:
-                logger.warning("Failed to broadcast COD order alert for order %s: %s", order.id, exc)
-            
-            broadcast_realtime_event(
-                "order_created",
-                {
-                    "order_id": str(order.id),
-                    "store_id": str(order.store_id),
-                    "status": order.status,
-                },
-            )
-            
-            # Notify Merchant (Push Notification)
-            from apps.users.notifications import PushNotificationService
-            PushNotificationService.notify_new_order(store.owner, order.id)
-
             # 5. Handle Auto-Acceptance
             if store.auto_accept_orders:
                 order.status = OrderStatus.ACCEPTED
                 order.save()
-                order.broadcast_status_update()
-            else:
-                # Schedule auto-cancellation in 5 minutes (for manual acceptance)
-                from .tasks import auto_cancel_stale_order
-                transaction.on_commit(
-                    lambda: auto_cancel_stale_order.apply_async(
-                        (str(order.id),), countdown=600
-                    )
-                )
+
+            from .tasks import notify_cod_order_created
+
+            transaction.on_commit(
+                lambda: notify_cod_order_created.delay(str(order.id))
+            )
 
             return Response({
                 "status": "success",
@@ -424,15 +385,6 @@ class CheckoutView(APIView):
             transaction_record.external_transaction_id = paymongo_response['id']
             transaction_record.provider_raw_response = paymongo_response.get("raw")
             transaction_record.save(update_fields=["external_transaction_id", "provider_raw_response", "updated_at"])
-
-            # Safety net: auto-cancel if the customer abandons PayMongo
-            # (e.g. source expires on PayMongo's page and no webhook arrives).
-            from .tasks import auto_cancel_stale_order
-            transaction.on_commit(
-                lambda: auto_cancel_stale_order.apply_async(
-                    (str(order.id),), countdown=900
-                )
-            )
 
             return Response({
                 "status": "pending",
