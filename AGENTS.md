@@ -59,6 +59,14 @@ Django 6.0 + DRF 3.17, Channels/ASGI (daphne), Celery, SimpleJWT, django-rest-kn
 - Use `docs/ai-activity/` for implementation/activity logs. Do not auto-commit docs unless explicitly asked.
 - Naming: markdown files use descriptive kebab-case (e.g. `some-description-changes.md`).
 
+## Code cleanup and maintainability
+
+- Remove dead code: unused imports, variables, functions, files, and abandoned logic.
+- No duplication: shared logic has one clear source of truth; centralize repeated helpers and components. Do not create a new component, hook, service, or helper when an existing reusable one can be used.
+- No over-engineering: make the smallest safe change; do not rewrite working code just to make it look different; do not add abstractions, libraries, or layers without a real need.
+- Keep functions and components focused on a single responsibility; extract focused hooks or services when a function or component grows.
+- Follow the existing folder structure, naming, and style before editing. Do not change unrelated files.
+
 ## Guardrails (always)
 
 - Inspect existing code and follow its structure, naming, and style before editing. Make the smallest safe change; do not rewrite working code or change unrelated files.
