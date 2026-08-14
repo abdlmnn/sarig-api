@@ -1,11 +1,10 @@
 import logging
 from decimal import Decimal
 from datetime import timedelta
-from math import radians, cos, sin, asin, sqrt
 from django.db import transaction
 from django.utils import timezone
 from .models import RiderOrderOffer, RiderOrderOfferStatus, RiderProfile
-from apps.users.geo import get_lat_lng
+from apps.users.geo import get_lat_lng, haversine_km
 
 logger = logging.getLogger(__name__)
 
@@ -13,22 +12,7 @@ class RiderDispatcherService:
     OFFER_TTL_SECONDS = 90
     PREDISPATCH_PREP_THRESHOLD_MINUTES = 10
 
-    @staticmethod
-    def haversine(lon1, lat1, lon2, lat2):
-        """
-        Calculate the great circle distance between two points 
-        on the earth (specified in decimal degrees)
-        """
-        # convert decimal degrees to radians 
-        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-
-        # haversine formula 
-        dlon = lon2 - lon1 
-        dlat = lat2 - lat1 
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        c = 2 * asin(sqrt(a)) 
-        r = 6371 # Radius of earth in kilometers. Use 3956 for miles
-        return c * r
+    haversine = staticmethod(haversine_km)
 
     @classmethod
     def find_best_rider(cls, store_lat, store_lng, max_radius_km=10):
@@ -213,7 +197,7 @@ class RiderDispatcherService:
         """
         Fallback direct assignment for ready delivery orders.
         """
-        logger.info(f"Dispatching rider for order {order.id}")
+        logger.info("Dispatching rider for order %s", order.id)
 
         rider_profile, distance = cls.find_best_rider_for_order(order)
 
@@ -234,7 +218,7 @@ class RiderDispatcherService:
             cls.notify_rider_pickup_ready(order)
             return True
 
-        logger.warning(f"No available riders found for order {order.id}")
+        logger.warning("No available riders found for order %s", order.id)
         return False
 
     @staticmethod
@@ -334,7 +318,7 @@ class RiderDispatcherService:
                 description=f"Earning for Order #{str(order.id)[:8]} ({distance:.2f}km)"
             )
         
-        logger.info(f"Rider {rider_profile.user.username} earned ₱{total_pay} for order {order.id}")
+        logger.info("Rider %s earned %s for order %s", rider_profile.user.username, total_pay, order.id)
         return total_pay
 
     @classmethod

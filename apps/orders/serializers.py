@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from rest_framework import serializers
+from rest_framework.reverse import reverse
 from apps.common.validators import validate_document_upload
 
 from .models import DeliveryMethod, DeliveryOption, Order, OrderItem
@@ -181,9 +182,11 @@ class OrderSerializer(serializers.ModelSerializer):
                 "id": str(prescription.id),
                 "file_name": prescription.file.name.rsplit("/", 1)[-1],
                 "file_url": (
-                    request.build_absolute_uri(prescription.file.url)
-                    if request and prescription.file
-                    else prescription.file.url
+                    reverse(
+                        "v1:prescription-file",
+                        args=[prescription.id],
+                        request=request,
+                    )
                     if prescription.file
                     else ""
                 ),

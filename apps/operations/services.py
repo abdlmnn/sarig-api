@@ -1,4 +1,3 @@
-import math
 from datetime import timedelta
 from decimal import Decimal
 
@@ -13,6 +12,7 @@ from apps.reviews.models import OrderReview
 from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
 from apps.vendors.models import Store
+from apps.users.geo import haversine_km
 
 from .models import AdminAlert, LoadStatus, ServiceZone
 
@@ -52,7 +52,7 @@ def normalize_text(value):
     return " ".join(str(value or "").strip().lower().split())
 
 
-def money(value):
+def to_float(value):
     return float(value or Decimal("0.00"))
 
 
@@ -62,16 +62,6 @@ def percent_change(current, previous):
     if previous == 0:
         return 0.0 if current == 0 else 100.0
     return round(float(((current - previous) / previous) * 100), 1)
-
-
-def haversine_km(lat1, lng1, lat2, lng2):
-    radius_km = 6371.0
-    lat1_rad, lng1_rad = math.radians(lat1), math.radians(lng1)
-    lat2_rad, lng2_rad = math.radians(lat2), math.radians(lng2)
-    dlat = lat2_rad - lat1_rad
-    dlng = lng2_rad - lng1_rad
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlng / 2) ** 2
-    return radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def zone_aliases(zone):
@@ -89,7 +79,7 @@ def nearest_zone_for_point(lat, lng, zones, max_km=8):
     best = None
     best_distance = None
     for zone in zones:
-        distance = haversine_km(float(lat), float(lng), float(zone.center_latitude), float(zone.center_longitude))
+        distance = haversine_km(float(lng), float(lat), float(zone.center_longitude), float(zone.center_latitude))
         if best_distance is None or distance < best_distance:
             best = zone
             best_distance = distance
@@ -260,8 +250,8 @@ def dashboard_stats(date_from=None, date_to=None):
     revenue = delivery_fees + system_fees + transport_fees
 
     return {
-        "gmv": {"amount": money(gmv), "currency": "PHP", "change_percent": 0.0},
-        "revenue": {"amount": money(revenue), "currency": "PHP", "change_percent": 0.0},
+        "gmv": {"amount": to_float(gmv), "currency": "PHP", "change_percent": 0.0},
+        "revenue": {"amount": to_float(revenue), "currency": "PHP", "change_percent": 0.0},
         "orders": {"total": orders.count(), "live": orders.filter(status__in=ACTIVE_ORDER_STATUSES).count()},
         "trips": {"total": rides.count(), "live": rides.filter(status__in=ACTIVE_RIDE_STATUSES).count()},
         "reviews": {"pending": 0},
@@ -407,13 +397,12 @@ def finance_overview(date_from=None, date_to=None):
     platform_revenue = merchant_fees + delivery_fees + transport_fees
 
     return {
-        "gmv": money(gmv),
-        "platform_revenue": money(platform_revenue),
-        "merchant_fees": money(merchant_fees),
-        "delivery_fees": money(delivery_fees),
-        "transport_fees": money(transport_fees),
-        "pending_payouts_count": pending_payments.count(),
-        "pending_payouts_amount": money(pending_payments.aggregate(total=Sum("amount"))["total"]),
+        "gmv": to_float(gmv),
+        "platform_revenue": to_float(platform_revenue),
+        "merchant_fees": to_float(merchant_fees),
+        "delivery_fees": to_float(delivery_fees),
+        "transport_fees": to_float(transport_fees),
+        "pending_payouts_amount": to_float(pending_payments.aggregate(total=Sum("amount"))["total"]),
         "currency": "PHP",
     }
 
@@ -439,11 +428,13 @@ def marketing_overview():
         "new_customers_delta": new_customers - previous_new_customers,
         "repeat_orders_percent": repeat_percent,
         "repeat_orders_change_percent": 0.0,
-        "promo_spend": money(promo_spend),
+        "promo_spend": to_float(promo_spend),
         "active_campaigns": 0,
         "active_promo_codes": PromoCode.objects.filter(is_active=True, start_date__lte=now, end_date__gte=now).count(),
         "currency": "PHP",
     }
+
+
 def zone_merchants(zone):
     stores = []
     for store in Store.objects.select_related("owner", "vertical").filter(city__iexact=zone.city):

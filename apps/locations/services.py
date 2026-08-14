@@ -4,6 +4,7 @@ import logging
 import requests
 from django.conf import settings
 
+from apps.common.money import money
 from apps.riders.services import RiderDispatcherService
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,6 @@ def _timeout():
     return getattr(settings, "LOCATION_PROVIDER_TIMEOUT_SECONDS", 8)
 
 
-def _money(value):
-    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
 def is_inside_marawi(latitude, longitude):
     latitude = Decimal(str(latitude))
     longitude = Decimal(str(longitude))
@@ -45,8 +42,8 @@ def calculate_delivery_fee(distance_km):
     base_fee = Decimal(str(settings.DELIVERY_BASE_FEE))
     per_km_fee = Decimal(str(settings.DELIVERY_PER_KM_FEE))
     min_fee = Decimal(str(settings.DELIVERY_MIN_FEE))
-    fee = base_fee + (_money(Decimal(str(distance_km))) * per_km_fee)
-    return max(_money(fee), _money(min_fee))
+    fee = base_fee + (money(Decimal(str(distance_km))) * per_km_fee)
+    return max(money(fee), money(min_fee))
 
 
 def haversine_route_estimate(origin, destination):

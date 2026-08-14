@@ -2,7 +2,8 @@ import random
 from datetime import timedelta
 from decimal import Decimal
 
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -30,6 +31,10 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            raise CommandError(
+                "This demo seed command must only run when DEBUG=True."
+            )
         rng = random.Random(42)
         now = timezone.now()
 

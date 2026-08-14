@@ -223,9 +223,7 @@ class PayMongoWebhookView(APIView):
 
     def _is_valid_signature(self, payload_body, signature_header):
         secret = getattr(settings, "PAYMONGO_WEBHOOK_SECRET", "") or ""
-        if not secret:
-            return bool(settings.DEBUG)
-        if not signature_header:
+        if not secret or not signature_header:
             return False
         digest = hmac.new(
             secret.encode("utf-8"), payload_body, hashlib.sha256

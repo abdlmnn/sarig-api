@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files import File
 from django.core.files.base import ContentFile
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -133,6 +133,10 @@ class Command(BaseCommand):
         parser.add_argument("--reset", action="store_true", help="Delete existing onboarding and operations mock data before reseeding.")
 
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            raise CommandError(
+                "This mock data seed command must only run when DEBUG=True."
+            )
         with transaction.atomic():
             if options["reset"]:
                 self.reset_mock_data()

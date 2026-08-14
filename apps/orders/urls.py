@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import CheckoutQuoteView, CheckoutView, CustomerOrderDetailView, MerchantOrderActionView, MerchantOrderDetailView, MerchantOrderListView, MerchantStoreOrderAnalyticsView, StoreOrderActivityView
+from .views import CheckoutQuoteView, CheckoutView, CustomerOrderDetailView, MerchantOrderActionView, MerchantOrderDetailView, MerchantOrderListView, MerchantStoreOrderAnalyticsView, PrescriptionFileView, StoreOrderActivityView
 from .cart_views import (
     CustomerCartItemView,
     CustomerCartListView,
@@ -8,6 +8,7 @@ from .cart_views import (
 )
 
 urlpatterns = [
+    path("prescriptions/<uuid:prescription_id>/file/", PrescriptionFileView.as_view(), name="prescription-file"),
     path("carts/", CustomerCartListView.as_view(), name="customer-cart-list"),
     path("carts/sync/", CustomerCartSyncView.as_view(), name="customer-cart-sync"),
     path("carts/items/<uuid:product_id>/", CustomerCartItemView.as_view(), name="customer-cart-item"),
