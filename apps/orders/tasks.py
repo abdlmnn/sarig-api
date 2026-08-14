@@ -5,9 +5,48 @@ from .models import Order, OrderStatus
 from apps.payments.models import PaymentMethod, PaymentStatus
 from apps.payments.services import PayMongoService
 from apps.users.notifications import PushNotificationService
+from apps.common.realtime import broadcast_realtime_event
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task
+def notify_cod_order_created(order_id):
+    """Send non-critical COD order notifications outside the checkout request."""
+    try:
+        order = Order.objects.select_related("store__owner", "customer").get(id=order_id)
+        channel_layer = get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"store_{order.store_id}_orders",
+                {
+                    "type": "order_alert",
+                    "message": {
+                        "order_id": str(order.id),
+                        "total_amount": str(order.total_amount),
+                        "customer_name": order.customer.get_full_name() or order.customer.username,
+                    },
+                },
+            )
+
+        broadcast_realtime_event(
+            "order_created",
+            {
+                "order_id": str(order.id),
+                "store_id": str(order.store_id),
+                "status": order.status,
+            },
+        )
+        if order.status == OrderStatus.ACCEPTED:
+            order.broadcast_status_update()
+        PushNotificationService.notify_new_order(order.store.owner, order.id)
+    except Order.DoesNotExist:
+        logger.warning("COD order %s no longer exists for notification", order_id)
+    except Exception:
+        logger.exception("Failed to notify about COD order %s", order_id)
 
 
 def _attempt_order_refund(order):
