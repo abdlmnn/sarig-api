@@ -185,6 +185,7 @@ REST_FRAMEWORK = {
         "payment_webhook": os.getenv("DRF_THROTTLE_PAYMENT_WEBHOOK", "120/min"),
         "search": os.getenv("DRF_THROTTLE_SEARCH", "60/min"),
         "locations": os.getenv("DRF_THROTTLE_LOCATIONS", "60/min"),
+        "files": os.getenv("DRF_THROTTLE_FILES", "60/min"),
     },
 }
 
