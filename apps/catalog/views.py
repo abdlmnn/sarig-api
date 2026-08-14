@@ -23,6 +23,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.money import money_payload
 from apps.onboarding.models import ApplicationStatus, MerchantApplication
 from apps.onboarding.services import ApplicationService
 from apps.locations.services import calculate_delivery_fee
@@ -209,15 +210,6 @@ def get_or_create_merchant_store(user):
         return None
 
     return ApplicationService.create_store_for_merchant(application)
-
-
-def money_payload(value):
-    amount = Decimal(value or 0).quantize(Decimal("0.01"))
-    return {
-        "value": str(amount),
-        "currency": "PHP",
-        "formatted": f"₱{amount:,.0f}",
-    }
 
 
 def product_stock_status(product):
