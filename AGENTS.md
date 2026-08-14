@@ -1,249 +1,70 @@
-## Purpose
-
-This file defines the engineering rules for AI-assisted development in this repository.
-
-The agent must act like a software engineering assistant, not only a code generator. The goal is to help build clean, maintainable, scalable, secure, and reliable software while following the existing codebase structure and conventions.
-
-Every change should leave the codebase better, not more complicated.
-
----
-
-## Core Principles
-
-* Keep solutions concise, precise, and maintainable.
-* Prefer simple, readable code over clever or overly complex code.
-* Review existing files before creating, refactoring, or changing code.
-* Follow the existing architecture, naming style, syntax style, and folder structure.
-* Avoid weird syntax, inconsistent formatting, or patterns that do not match the rest of the codebase.
-* Watch for obvious bugs, oversized files, duplicated logic, dead code, and poor separation of concerns.
-* Prioritize correctness, readability, maintainability, security, and long-term stability.
-* Do not introduce unnecessary files, folders, abstractions, dependencies, or comments.
-* No emojis or decorative special characters in code comments, documentation, commit messages, or logs.
-* Comments must be short, useful, and written as one sentence when needed.
-
----
-
-## Planning Rules
-
-Before writing code, analyze the task first.
-
-For small and clear changes:
-
-* Inspect the relevant files.
-* Make the smallest safe change.
-* Explain what changed.
-
-For large, risky, unclear, or multi-file changes:
-
-* Inspect the project structure first.
-* Identify the relevant files.
-* Explain the current flow.
-* Create a short implementation plan.
-* Make a to-do list.
-* Run major changes by the user before implementation.
-
-Do not immediately rewrite large parts of the project without understanding the current structure.
-
----
-
-## Architecture Rules
-
-* Separate responsibilities clearly between application layers, services, utilities, business logic, data models, schemas, hooks, components, screens, routes, controllers, views, validators, and configuration files.
-* Do not mix unrelated responsibilities in one file or function.
-* Keep presentation logic separate from business logic.
-* Keep API, database, storage, or external-service logic inside proper service or data-access files.
-* Keep validation in the proper validation layer.
-* Keep reusable logic centralized.
-* Avoid duplicated state, configuration, constants, validation rules, and business rules.
-* Shared logic must have one clear source of truth.
-* Avoid deeply nested folder structures unless they are necessary.
-* Group files by feature domain or responsibility based on the existing project pattern.
-
----
-
-## Code Quality Rules
-
-* Use the right data structure and algorithm for the problem.
-* Keep functions, classes, modules, components, and screens focused on one responsibility.
-* Remove unused imports, variables, functions, files, and abandoned logic.
-* Avoid redundancy unless it clearly improves usability or readability.
-* Do not expose data needlessly.
-* Apply least-privilege principles when returning or accessing data.
-* Do not add external libraries unless absolutely necessary.
-* Use the project dependency file for correct dependency versions.
-* If a dependency is needed, explain why before adding it.
-* Do not rewrite working code just to make it look different.
-* Do not change unrelated files.
-
----
-
-## File and Folder Rules
-
-* Keep folder structure clean, organized, and easy to understand.
-* Follow the project’s existing naming convention.
-* Markdown files must use descriptive kebab-case names, such as `some-description-changes.md`.
-* Avoid unnecessary markdown files.
-* Avoid duplicate folders that serve the same purpose.
-* If a file becomes too large or handles too many responsibilities, suggest a refactor before changing it heavily.
-* Do not create new components, utilities, hooks, services, helpers, validators, schemas, stores, modules, or functions if an existing reusable one can be used.
-
----
-
-## Documentation and Activity Logs
-
-* Write activity logs or engineering notes in `/docs` when needed.
-* Use activity logs to record important implementation decisions, technical debt, follow-up tasks, or confusing areas.
-* Refer back to `/docs` activity logs if the project context becomes unclear.
-* Do not auto-commit activity logs or documentation files unless the user explicitly asks.
-* Keep documentation concise, structured, and useful.
-* Do not create one large unstructured markdown file for all future ideas.
-* Separate technical debt, improvements, bugs, optimization notes, and future enhancements when documenting.
-
----
-
-## Security Rules
-
-* Never trust client-side input directly.
-* Validate and sanitize incoming data.
-* Protect sensitive endpoints, actions, screens, routes, files, services, and operations.
-* Enforce proper authentication and authorization when applicable.
-* Never bypass role checks, ownership checks, permission rules, or access boundaries.
-* Store secrets only in environment variables or approved secret-management systems.
-* Never expose credentials, passwords, API keys, tokens, connection strings, or private configuration.
-* Do not expose internal system details in user-facing error responses.
-* Do not expose customer, user, or private personal data unless the user explicitly approves a valid exemption.
-* Personal data includes names, contacts, account numbers, transactions, private records, identifiers, and similar sensitive data.
-* Use least-privilege data access.
-* Handle file uploads securely when applicable.
-* Add rate limiting, abuse protection, or safe guards when needed for sensitive actions.
-
----
-
-## Performance and Scalability Rules
-
-* Avoid unnecessary API requests, database queries, storage calls, network calls, and expensive computations.
-* Prevent N+1 query problems when working with databases or relational data.
-* Avoid duplicate rendering and unnecessary recalculations.
-* Optimize loops, filtering, sorting, pagination, and data processing when needed.
-* Avoid sending large payloads when smaller responses are enough.
-* Avoid unnecessary state updates.
-* Optimize image handling, media delivery, caching, and asset loading when relevant.
-* Check whether the implementation can scale with more users, records, files, traffic, devices, and feature complexity.
-* Avoid tightly coupled systems that are hard to extend.
-
----
-
-## Testing and Validation Rules
-
-Never assume AI-generated code is correct without verification.
-
-Before considering work complete:
-
-* Validate the implementation manually.
-* Confirm the logic matches the actual project requirement.
-* Confirm library usage and APIs are real and compatible with the project.
-* Test successful scenarios.
-* Test failing scenarios.
-* Test validation errors.
-* Test permission or authorization errors when relevant.
-* Test edge cases and unexpected input.
-* Check for regressions.
-* Run available tests, linting, formatting, type checks, builds, or project-specific verification commands when possible.
-
-If tests or commands cannot be run, clearly state that they were not run and explain why.
-
----
-
-## Version Control Rules
-
-* Do not auto-push any branch.
-* Do not commit unless the user explicitly asks.
-* When asked to commit, keep commits focused and atomic.
-* Use clear commit messages that describe the actual change.
-* Do not mix unrelated changes in one commit.
-* Before committing, summarize changed files and confirm the scope is correct.
-
----
-
-## Access Scope
-
-* Only access files, folders, services, modules, packages, apps, or connections that are relevant to the requested task.
-* Do not inspect unrelated projects, unrelated services, unrelated folders, unrelated modules, or unrelated private files.
-* If this repository has a strict access boundary, follow it exactly.
-* If approved areas are defined for the current task, access only those areas unless the user explicitly allows more.
-* If approved areas are not defined, infer the smallest relevant scope from the user’s request and the repository structure.
-* If the required scope is unclear or risky, ask before accessing or changing unrelated areas.
-
----
-
-## AI Restrictions
-
-* Do not include customer, user, or private personal data in prompts, examples, logs, documentation, test data, or generated content unless explicitly approved.
-* Do not include credentials, passwords, API keys, tokens, connection strings, or secrets.
-* Do not invent production data.
-* Do not fabricate test results.
-* Do not claim a command passed if it was not actually run.
-* Do not silently ignore errors.
-* Do not make broad architecture changes without explaining the risk.
-* Do not replace engineering review with AI output.
-
----
-
-## Implementation Workflow
-
-Follow this workflow for normal development tasks:
-
-1. Inspect relevant files.
-2. Understand the current structure and flow.
-3. Identify the smallest safe change.
-4. Plan the implementation if the task is large or unclear.
-5. Implement clean, focused changes.
-6. Remove unused code and unnecessary files.
-7. Check formatting, linting, types, tests, builds, or manual behavior.
-8. Review the result for bugs, security, performance, and maintainability.
-9. Summarize the completed work clearly.
-
----
-
-## Final Review Checklist
-
-Before saying the task is complete, check:
-
-* The requested behavior works.
-* Existing behavior is not broken.
-* Architecture remains clean.
-* Folder structure remains organized.
-* Logic is reusable where appropriate.
-* No duplicated implementation exists.
-* No dead code remains.
-* No unnecessary dependency was added.
-* Security and permissions are handled.
-* Edge cases are handled.
-* Error states are handled.
-* Performance issues are considered.
-* Tests or manual checks are completed when possible.
-* Documentation or activity logs are updated only when useful.
-* Final response includes a clear summary.
-
----
-
-## Final Response Format
-
-After making code changes, respond with:
-
-1. Summary of what changed
-2. Files changed
-3. Why each file changed
-4. How to test manually
-5. Commands run and results
-6. Risks, limitations, or follow-up tasks
-
-If no code was changed, explain the analysis, recommendation, or plan clearly.
-
----
-
-## Final Principle
-
-AI should accelerate engineering, not replace engineering thinking.
-
-The objective is not to generate more code faster. The objective is to build systems that remain clean, scalable, understandable, maintainable, secure, and reliable long after development is finished.
+# Sarig API — Engineering Guide for Agents
+
+This file contains the repo-specific facts an agent is likely to get wrong, plus the guardrails that must not be violated. Keep it small and accurate. Prefer `/docs` for prose; keep `AGENTS.md` for rules.
+
+## Stack (verify against `requirements.txt`, not memory)
+
+Django 6.0 + DRF 3.17, Channels/ASGI (daphne), Celery, SimpleJWT, django-rest-knox, PostGIS (optional), Redis, Cloudinary, `rav` task runner. Python 3.12 (`.python-version`). Delivery super-app: vendors, orders, rides, riders, payments (PayMongo), chat, locations, marketing, reviews, onboarding.
+
+## Setup and commands
+
+- Activate `.venv` and install with `pip install -r requirements.txt`.
+- Copy `.env.example` to `.env` before running; secrets and API keys live only in `.env` (git-ignored). Never commit real keys or credentials.
+- `manage.py` defaults to `config.settings.dev`. README shows `--settings=config.settings.dev`; prod is `config.settings.prod`.
+- Common commands:
+  - Run: `python manage.py runserver` (API at `http://127.0.0.1:8000/api/v1/`)
+  - Migrate: `python manage.py makemigrations` then `python manage.py migrate`
+  - Check: `python manage.py check`
+  - Tests: `python manage.py test`
+- `rav` task runner is available (`rav dev`, `rav migrate`, `rav test`, `rav check`, `rav seed_onboarding`, `rav tunnel`, `rav admin`). Prefer `manage.py` unless a `rav` script exists.
+
+## Environment / DB quirks
+
+- Env is loaded by `config/settings/base.py` via `python-dotenv` from `.env` at project root (`override=False`). `DJANGO_SETTINGS_MODULE` must be `config.settings.*` (a module, not a file).
+- Database is chosen at runtime by `USE_POSTGIS`:
+  - `USE_POSTGIS=False` (default) → SQLite at `db.sqlite3`, no GIS.
+  - `USE_POSTGIS=1` → PostGIS via psycopg3, adds `django.contrib.gis` to `INSTALLED_APPS`.
+- Channels requires Redis unless `IS_TESTING` (tests use in-memory channel layer automatically — no Redis needed for tests).
+- Celery broker defaults to Redis (`CELERY_BROKER_URL`/`REDIS_URL`); RabbitMQ `amqp://` is the Windows fallback.
+- Location features need `GEOAPIFY_API_KEY` and `OPENROUTESERVICE_API_KEY`. See `docs/api/locations_api.md` for the delivery-fee flow.
+- Docker Compose (`docker compose up --build`) runs API + PostGIS + Nginx; it mounts `.env` and forces `USE_POSTGIS=1`.
+
+## Architecture
+
+- Feature apps live under `apps/` (users, vendors, catalog, orders, payments, rides, riders, chat, locations, operations, onboarding, marketing, reviews, email_templates). Shared code lives in `apps/common`.
+- All API routes are mounted at `/api/v1/` through `apps/v1/urls.py` (namespace `v1`); `config/urls.py` is the root URLconf. `rest_framework` uses `NamespaceVersioning`.
+- Custom user model: `AUTH_USER_MODEL = "users.User"`. Default permission is `IsAuthenticatedOrReadOnly`; JWT auth is the default.
+- Auth is role-scoped (ADMIN / MERCHANT / CUSTOMER) with per-role refresh cookies configured in `base.py`. Custom middleware lives in `config/middleware.py` (e.g. `DeprecationHeaderMiddleware`) and `config/jwt_auth_middleware.py`. Read `docs/role-scoped-authentication-architecture.md` before touching auth.
+- Async entrypoint is `config.asgi` (daphne); WSGI is `config.wsgi`. Celery beat in `base.py` schedules `apps.rides.tasks.expire_pending_rides_task` every minute.
+- Media storage switches to Cloudinary when `USE_CLOUDINARY=1`; local dev uses local `media/`.
+- `config/` is the Django project package — keep settings, urls, and middleware there, not inside `apps/`.
+
+## Lint, format, typecheck
+
+- Lint: `flake8 .`. Config in `.flake8` selects only `E9,F63,F7,F82` (syntax/undefined-name errors), `max-line-length=127`, `max-complexity=10`; it excludes `migrations/`, `.venv`, `media`, etc.
+- Formatter: Black is the VS Code default formatter. Match existing style; keep lines ≤ 127.
+- Type checking config exists at `pyrightconfig.json` (`typeCheckingMode: basic`). Run pyright only if the task touches types; it is not part of CI.
+
+## Tests
+
+- Tests live in the top-level `tests/` package, one folder per domain (mirrors `apps/`). Do not scatter tests inside `apps/`.
+- Run a single module: `python manage.py test tests.orders.test_checkout`.
+- HTTP request fixtures (`.http`) sit alongside tests in `tests/<domain>/GET|POST/` for manual API verification.
+- CI (`.github/workflows/django.yml`) runs flake8, then `makemigrations --check --dry-run`, then a critical suite, then the full suite — against a PostGIS + Redis service. Any model change that produces a missing migration will fail CI.
+- Test account setup, permissions, webhook security, and ownership checks — auth/authorization failures are a frequent focus (see `tests/auth/`, `tests/payments/test_webhook_security.py`, `tests/orders/test_prescription_files.py`).
+
+## Docs
+
+- Only `docs/api/**` is committed; all other `docs/**` is git-ignored (private). Put public API reference in `docs/api/`, private notes elsewhere in `docs/`.
+- Use `docs/ai-activity/` for implementation/activity logs. Do not auto-commit docs unless explicitly asked.
+- Naming: markdown files use descriptive kebab-case (e.g. `some-description-changes.md`).
+
+## Guardrails (always)
+
+- Inspect existing code and follow its structure, naming, and style before editing. Make the smallest safe change; do not rewrite working code or change unrelated files.
+- Never commit, push, or create PRs unless explicitly asked. When committing, keep it atomic with a clear message; never include secrets.
+- Do not add external libraries unless necessary; if one is needed, explain why. Remove dead code and unused imports.
+- Never trust client input; validate and sanitize. Enforce auth/ownership/permission checks; do not bypass role or ownership boundaries. Store secrets only in env vars.
+- Never expose customer or personal data, credentials, tokens, or connection strings. Do not fabricate test results or claim a command passed that was not run.
+- No emojis or decorative characters in code comments, commit messages, logs, or docs. Keep comments short and useful.
+- If you cannot run tests/lint, state that clearly and why.
