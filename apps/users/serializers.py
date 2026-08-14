@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import (
@@ -52,6 +53,10 @@ class UserRegisterSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
         )
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
