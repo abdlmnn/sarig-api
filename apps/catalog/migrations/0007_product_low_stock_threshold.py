@@ -1,6 +1,23 @@
 from django.db import migrations, models
 
 
+def ensure_low_stock_threshold_column(apps, schema_editor):
+    table_name = "catalog_product"
+    column_names = {
+        column.name
+        for column in schema_editor.connection.introspection.get_table_description(
+            schema_editor.connection.cursor(),
+            table_name,
+        )
+    }
+    if "low_stock_threshold" in column_names:
+        return
+    schema_editor.execute(
+        "ALTER TABLE catalog_product "
+        "ADD COLUMN low_stock_threshold integer NOT NULL DEFAULT 5"
+    )
+
+
 class Migration(migrations.Migration):
     dependencies = [
         ("catalog", "0006_ensure_product_sku_column"),
@@ -9,13 +26,9 @@ class Migration(migrations.Migration):
     operations = [
         migrations.SeparateDatabaseAndState(
             database_operations=[
-                migrations.RunSQL(
-                    sql=(
-                        "ALTER TABLE catalog_product "
-                        "ADD COLUMN IF NOT EXISTS low_stock_threshold integer "
-                        "NOT NULL DEFAULT 5"
-                    ),
-                    reverse_sql=migrations.RunSQL.noop,
+                migrations.RunPython(
+                    ensure_low_stock_threshold_column,
+                    reverse_code=migrations.RunPython.noop,
                 ),
             ],
             state_operations=[
