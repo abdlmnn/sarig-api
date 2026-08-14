@@ -1,6 +1,7 @@
 from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,6 +12,7 @@ from apps.riders.models import RiderProfile
 from apps.rides.models import Ride, RideStatus
 from apps.vendors.models import Store
 from apps.vendors.models import StoreManualOverride
+from apps.vendors.utils import PH_TZ, store_availability_payload
 
 from .models import AdminAlert, ServiceZone
 from .serializers import AdminMerchantActionSerializer, AdminRiderActionSerializer
@@ -392,12 +394,14 @@ class AdminAlertResolveView(APIView):
 def merchant_payloads(stores, active_only=False):
     payloads = []
     zones = list(ServiceZone.objects.filter(is_active=True))
+    now_ph = timezone.now().astimezone(PH_TZ)
     for store in stores:
         active_orders = Order.objects.filter(store=store, status__in=ACTIVE_ORDER_STATUSES).count()
         if active_only and active_orders == 0:
             continue
         zone = zone_for_store(store, zones)
         delivered_orders = Order.objects.filter(store=store, status=OrderStatus.DELIVERED)
+        availability = store_availability_payload(store, now_ph)
         payloads.append(
             {
                 "id": str(store.id),
@@ -408,7 +412,8 @@ def merchant_payloads(stores, active_only=False):
                 "contact_number": store.contact_number,
                 "status": "active" if store.is_active else "paused",
                 "zone": {"id": str(zone.id), "name": zone.name} if zone else None,
-                "is_open": store.is_open,
+                "is_open": availability["status"] == "OPEN",
+                "next_status_change": availability.get("next_status_change"),
                 "manual_override": store.manual_override,
                 "status_reason": store.manual_override_reason,
                 "rating": float(store.rating),
