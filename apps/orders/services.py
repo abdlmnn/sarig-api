@@ -1,10 +1,11 @@
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta, timezone as dt_timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from django.db.models import Count, Sum
 from django.utils import timezone
 
+from apps.common.money import money, money_payload
 from apps.vendors.utils import PH_TZ
 
 from .models import DeliveryMethod, Order, OrderStatus
@@ -18,19 +19,6 @@ ACTIVE_STATUSES = [
     OrderStatus.ON_THE_WAY,
 ]
 PREP_TARGET_MINUTES = 15
-
-
-def money(value):
-    return Decimal(value or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def money_payload(value):
-    value = money(value)
-    return {
-        "value": str(value),
-        "currency": "PHP",
-        "formatted": f"₱{value:,.0f}",
-    }
 
 
 def minutes_label(minutes):
