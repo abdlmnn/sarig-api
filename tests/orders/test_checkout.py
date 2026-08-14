@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from apps.users.models import User, Role
-from apps.vendors.models import Store, BusinessVertical
+from apps.vendors.models import BusinessVertical, Store, StoreManualOverride
 from apps.catalog.models import Category, ModifierGroup, ModifierItem, Product
 from apps.orders.models import Order
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
@@ -44,6 +44,7 @@ class CheckoutFlowTests(TestCase):
             longitude=125.455300,
             street_address="Sample St",
             city="Marawi",
+            manual_override=StoreManualOverride.OPEN_NOW,
         )
         self.category = Category.objects.create(store=self.store, name="Meals", slug="meals")
         self.product = Product.objects.create(
@@ -86,6 +87,11 @@ class CheckoutFlowTests(TestCase):
         res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
         self.assertEqual(res.status_code, 201)
         order = Order.objects.get(id=res.data["order"]["id"])
+        self.assertEqual(
+            res.data["tracking_url"],
+            f"http://testserver/api/v1/orders/{order.id}/",
+        )
+        self.assertIn("tracking", res.data["order"])
         self.assertEqual(order.subtotal, Decimal("200.00"))
         self.assertEqual(order.delivery_fee, Decimal("0.00"))
         self.assertEqual(order.system_fee, Decimal("10.00"))
