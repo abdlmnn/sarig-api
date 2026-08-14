@@ -46,24 +46,20 @@ class PayMongoService:
         configured = getattr(settings, "PAYMONGO_ENABLED_PAYMENT_METHODS", "")
         configured_methods = cls._normalize_configured_payment_methods(configured)
 
+        if configured_methods:
+            return configured_methods
+
         if getattr(settings, "PAYMONGO_USE_MOCK", settings.DEBUG):
             if cls._is_production_settings():
                 raise ImproperlyConfigured(
                     "PAYMONGO_USE_MOCK cannot be enabled in production."
                 )
-            return configured_methods or list(cls.SUPPORTED_PAYMENT_METHODS)
-
-        if cls._uses_test_key() and configured_methods:
-            return configured_methods
+            return list(cls.SUPPORTED_PAYMENT_METHODS)
 
         url = f"{cls.BASE_URL}/merchants/capabilities/payment_methods"
         response = requests.get(url, headers=cls.get_headers(), timeout=15)
         response.raise_for_status()
         active_methods = cls._extract_capability_methods(response.json())
-        if configured_methods:
-            active_methods = [
-                method for method in active_methods if method in configured_methods
-            ]
         return active_methods
 
     @classmethod
@@ -92,13 +88,6 @@ class PayMongoService:
             if normalized and normalized in cls.SUPPORTED_PAYMENT_METHODS:
                 methods.append(normalized)
         return list(dict.fromkeys(methods))
-
-    @classmethod
-    def _uses_test_key(cls):
-        api_key = getattr(settings, "PAYMONGO_SECRET_KEY", "") or os.getenv(
-            "PAYMONGO_SECRET_KEY", ""
-        )
-        return str(api_key).startswith("sk_test_")
 
     @classmethod
     def _extract_capability_methods(cls, payload):
