@@ -421,6 +421,15 @@ class CheckoutView(APIView):
             transaction_record.provider_raw_response = paymongo_response.get("raw")
             transaction_record.save(update_fields=["external_transaction_id", "provider_raw_response", "updated_at"])
 
+            # Safety net: auto-cancel if the customer abandons PayMongo
+            # (e.g. source expires on PayMongo's page and no webhook arrives).
+            from .tasks import auto_cancel_stale_order
+            transaction.on_commit(
+                lambda: auto_cancel_stale_order.apply_async(
+                    (str(order.id),), countdown=900
+                )
+            )
+
             return Response({
                 "status": "pending",
                 "checkout_url": paymongo_response['checkout_url'],
