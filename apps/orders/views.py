@@ -1,4 +1,5 @@
 import json
+import mimetypes
 from datetime import timedelta
 
 from rest_framework import status, permissions
@@ -9,6 +10,7 @@ from django.db import transaction
 from django.db.models import CharField, Count, F, Q, Sum
 from django.db.models.functions import TruncDate
 from django.db.models.functions import Cast
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import logging
@@ -123,6 +125,44 @@ class CustomerOrderDetailView(APIView):
         )
 
         return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+class PrescriptionFileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "files"
+
+    def get(self, request, prescription_id):
+        prescription = get_object_or_404(
+            OrderPrescription.objects.select_related(
+                "order", "order__store", "order__customer", "order__rider"
+            ),
+            id=prescription_id,
+        )
+        order = prescription.order
+        user = request.user
+        is_authorized = (
+            user.is_staff
+            or order.customer_id == user.id
+            or order.rider_id == user.id
+            or order.store.owner_id == user.id
+        )
+        if not is_authorized:
+            return Response(
+                {"detail": "You do not have access to this file."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not prescription.file:
+            return Response(
+                {"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        file_name = prescription.file.name.rsplit("/", 1)[-1]
+        content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+        return FileResponse(
+            prescription.file.open("rb"),
+            as_attachment=request.query_params.get("download") == "1",
+            filename=file_name,
+            content_type=content_type,
+        )
 
 
 class MerchantStoreOrderAnalyticsView(APIView):
