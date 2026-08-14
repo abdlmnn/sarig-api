@@ -123,9 +123,6 @@ class PayMongoWebhookView(APIView):
                 )
 
                 # Handle Auto-Acceptance
-                # Notify Merchant (Push Notification)
-                from apps.users.notifications import PushNotificationService
-
                 PushNotificationService.notify_new_order(order.store.owner, order.id)
 
                 if order.store.auto_accept_orders:
@@ -165,6 +162,9 @@ class PayMongoWebhookView(APIView):
             order.status = OrderStatus.CANCELLED
             order.save()
             order.broadcast_status_update()
+            PushNotificationService.notify_order_status(
+                order.customer, "FAILED", order.id
+            )
 
         elif event_type in self.EXPIRED_EVENTS:
             payment_tx.status = PaymentStatus.EXPIRED
@@ -174,6 +174,9 @@ class PayMongoWebhookView(APIView):
             order.status = OrderStatus.CANCELLED
             order.save()
             order.broadcast_status_update()
+            PushNotificationService.notify_order_status(
+                order.customer, "EXPIRED", order.id
+            )
 
         return Response({"status": "Webhook received"})
 
