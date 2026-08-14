@@ -44,6 +44,8 @@ class CheckoutFlowTests(TestCase):
             longitude=125.455300,
             street_address="Sample St",
             city="Marawi",
+            is_open=True,
+            is_active=True,
             manual_override=StoreManualOverride.OPEN_NOW,
         )
         self.category = Category.objects.create(store=self.store, name="Meals", slug="meals")
@@ -65,6 +67,9 @@ class CheckoutFlowTests(TestCase):
             longitude=125.470000,
             street_address="Other St",
             city="Marawi",
+            is_open=True,
+            is_active=True,
+            manual_override=StoreManualOverride.OPEN_NOW,
         )
         self.other_category = Category.objects.create(
             store=self.other_store, name="Drinks", slug="drinks"
