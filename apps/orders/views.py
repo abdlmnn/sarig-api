@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from rest_framework import status, permissions
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.reverse import reverse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
@@ -399,7 +400,10 @@ class CheckoutView(APIView):
             return Response({
                 "status": "success",
                 "message": "Order placed via COD.",
-                "order": OrderSerializer(order, context={"request": request}).data
+                "order": OrderSerializer(order, context={"request": request}).data,
+                "tracking_url": reverse(
+                    "v1:customer-order-detail", args=[order.id], request=request
+                ),
             }, status=status.HTTP_201_CREATED)
 
         elif requested_method == PaymentMethod.PAYMONGO:
