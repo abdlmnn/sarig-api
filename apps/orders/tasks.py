@@ -49,6 +49,11 @@ def auto_cancel_stale_orders():
             order.status = OrderStatus.CANCELLED
             order.save()
             order.broadcast_status_update()
+
+            order.payment_attempts.filter(
+                payment_method=PaymentMethod.PAYMONGO,
+                status=PaymentStatus.PENDING,
+            ).update(status=PaymentStatus.EXPIRED)
             
             refunded = _attempt_order_refund(order)
             PushNotificationService.notify_order_status(
@@ -70,6 +75,11 @@ def auto_cancel_stale_order(order_id):
         order.status = OrderStatus.CANCELLED
         order.save()
         order.broadcast_status_update()
+
+        order.payment_attempts.filter(
+            payment_method=PaymentMethod.PAYMONGO,
+            status=PaymentStatus.PENDING,
+        ).update(status=PaymentStatus.EXPIRED)
         
         refunded = _attempt_order_refund(order)
         PushNotificationService.notify_order_status(
