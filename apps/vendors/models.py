@@ -1,12 +1,19 @@
 import uuid
+import os
 from django.db import IntegrityError, models, transaction
 from apps.users.models import User
 from decimal import Decimal
 from apps.users.geo import to_wkt_point
 from django.conf import settings
-from django.contrib.gis.db import models as gis_models
-from django.contrib.gis.geos import Point
 from django.utils.text import slugify
+
+if getattr(settings, "USE_POSTGIS", False):
+    if os.name == "nt" and getattr(settings, "GDAL_LIBRARY_PATH", ""):
+        os.add_dll_directory(os.path.dirname(settings.GDAL_LIBRARY_PATH))
+    from django.contrib.gis.db import models as gis_models
+    from django.contrib.gis.geos import Point
+else:
+    Point = None
 
 
 class StoreDeliveryTime(models.TextChoices):
@@ -63,7 +70,10 @@ class Store(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
     location_wkt = models.CharField(max_length=120, null=True, blank=True, db_index=True)
-    location_point = gis_models.PointField(geography=True, null=True, blank=True)
+    if getattr(settings, "USE_POSTGIS", False):
+        location_point = gis_models.PointField(geography=True, null=True, blank=True)
+    else:
+        location_point = models.JSONField(null=True, blank=True)
     
     street_address = models.TextField()
     city = models.CharField(max_length=100)
@@ -146,6 +156,7 @@ class Store(models.Model):
         self.location_wkt = to_wkt_point(self.latitude, self.longitude)
         if (
             getattr(settings, "USE_POSTGIS", False)
+            and Point is not None
             and self.latitude is not None
             and self.longitude is not None
         ):
