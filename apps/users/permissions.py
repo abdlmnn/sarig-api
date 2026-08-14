@@ -13,7 +13,6 @@ class HasRole(BasePermission):
         if user.is_superuser:
             return True
 
-        # Check for both Title Case and lowercase for robustness
         return user.roles.filter(name__iexact=self.role_name).exists()
 
 
