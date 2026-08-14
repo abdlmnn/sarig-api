@@ -1,11 +1,11 @@
 from django.core.exceptions import ValidationError
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
-from math import radians, cos, sin, asin, sqrt
 from django.db.models import F
 import logging
 
 from apps.riders.models import RiderProfile
+from apps.users.geo import haversine_km
 
 from .models import FareBreakdown, Ride, RideStatus, VehicleType
 
@@ -13,14 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class RideAssignmentService:
-    @staticmethod
-    def haversine_km(lon1, lat1, lon2, lat2):
-        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-        dlon = lon2 - lon1
-        dlat = lat2 - lat1
-        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-        c = 2 * asin(sqrt(a))
-        return 6371 * c
+    haversine_km = staticmethod(haversine_km)
 
     @staticmethod
     def assign_rider(ride: Ride, rider: RiderProfile) -> Ride:
