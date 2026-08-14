@@ -1,9 +1,6 @@
 import logging
 
 from django.conf import settings
-from django.contrib.gis.db.models.functions import Distance
-from django.contrib.gis.geos import Point
-from django.contrib.gis.measure import D
 from django.db.models import Avg
 from django.utils import timezone
 from rest_framework import permissions, viewsets
@@ -78,6 +75,10 @@ class StoreViewSet(viewsets.ModelViewSet):
 
             if getattr(settings, "USE_POSTGIS", False):
                 try:
+                    from django.contrib.gis.db.models.functions import Distance
+                    from django.contrib.gis.geos import Point
+                    from django.contrib.gis.measure import D
+
                     user_location = Point(lng_f, lat_f, srid=4326)
                     return (
                         queryset.filter(location_point__isnull=False)
@@ -135,6 +136,10 @@ class NearbyStoresView(APIView):
         # Prefer PostGIS query path, but keep Haversine fallback for dual-mode rollout.
         if getattr(settings, "USE_POSTGIS", False):
             try:
+                from django.contrib.gis.db.models.functions import Distance
+                from django.contrib.gis.geos import Point
+                from django.contrib.gis.measure import D
+
                 user_point = Point(lng_f, lat_f, srid=4326)
                 stores = stores.filter(location_point__isnull=False)
                 if radius_f is not None:
