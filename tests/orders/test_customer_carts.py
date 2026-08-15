@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from apps.catalog.models import Category, ModifierGroup, ModifierItem, Product, ProductType
 from apps.orders.models import CustomerCart, CustomerCartItem
 from apps.users.models import Role, User
-from apps.vendors.models import BusinessVertical, Store
+from apps.vendors.models import BusinessVertical, Store, StoreManualOverride
 
 
 class CustomerCartApiTests(TestCase):
@@ -39,6 +39,7 @@ class CustomerCartApiTests(TestCase):
             city="Marawi",
             is_open=True,
             is_active=True,
+            manual_override=StoreManualOverride.OPEN_NOW,
         )
         category = Category.objects.create(
             store=self.store,
@@ -258,7 +259,8 @@ class CustomerCartApiTests(TestCase):
 
     def test_cart_rejects_closed_store(self):
         self.store.is_open = False
-        self.store.save(update_fields=["is_open", "updated_at"])
+        self.store.manual_override = StoreManualOverride.CLOSED_TEMPORARILY
+        self.store.save(update_fields=["is_open", "manual_override", "updated_at"])
 
         response = self.client.put(
             f"/api/v1/orders/carts/items/{self.product.id}/",
