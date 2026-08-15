@@ -178,8 +178,8 @@ def build_store_order_activity(request):
     orders = Order.objects.filter(store_id__in=store_ids)
     today_orders = orders.filter(created_at__gte=today_start, created_at__lt=today_end)
     yesterday_orders = orders.filter(created_at__gte=yesterday_start, created_at__lt=yesterday_end)
-    incoming_orders_qs = (
-        orders.filter(status=OrderStatus.PENDING)
+    active_orders_qs = (
+        today_orders.filter(status__in=ACTIVE_STATUSES)
         .select_related("customer", "rider", "store__vertical")
         .prefetch_related("items__product")
         .order_by("created_at", "id")
@@ -232,7 +232,7 @@ def build_store_order_activity(request):
     pickup_delay = 0
 
     active_payload = []
-    for order in incoming_orders_qs[:10]:
+    for order in active_orders_qs[:10]:
         active_payload.append(merchant_order_summary(order, now))
 
     alerts = []
