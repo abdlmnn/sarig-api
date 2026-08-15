@@ -16,6 +16,9 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import logging
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from apps.common.realtime import broadcast_realtime_event
 from apps.orders.models import (
     CustomerCart,
     DeliveryMethod,
@@ -35,6 +38,37 @@ from .services import ACTIVE_STATUSES, build_store_order_activity, merchant_orde
 
 
 logger = logging.getLogger(__name__)
+
+
+def _broadcast_order_created(order):
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"store_{order.store_id}_orders",
+                {
+                    "type": "order_alert",
+                    "message": {
+                        "order_id": str(order.id),
+                        "total_amount": str(order.total_amount),
+                        "customer_name": order.customer.get_full_name()
+                        or order.customer.username,
+                    },
+                },
+            )
+    except Exception as exc:
+        logger.warning(
+            "Failed to broadcast COD order alert for order %s: %s", order.id, exc
+        )
+
+    broadcast_realtime_event(
+        "order_created",
+        {
+            "order_id": str(order.id),
+            "store_id": str(order.store_id),
+            "status": order.status,
+        },
+    )
 
 
 class StoreOrderActivityView(APIView):
@@ -354,9 +388,18 @@ class CheckoutView(APIView):
 
             from .tasks import notify_cod_order_created
 
-            transaction.on_commit(
-                lambda: notify_cod_order_created.delay(str(order.id))
-            )
+            def notify_after_commit():
+                _broadcast_order_created(order)
+                try:
+                    notify_cod_order_created.delay(str(order.id))
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to queue COD notification for order %s: %s",
+                        order.id,
+                        exc,
+                    )
+
+            transaction.on_commit(notify_after_commit)
 
             return Response({
                 "status": "success",
