@@ -107,6 +107,32 @@ class CheckoutFlowTests(TestCase):
             ).exists()
         )
 
+    @patch("apps.orders.tasks.notify_cod_order_created.delay")
+    @patch("apps.orders.views._broadcast_order_created")
+    def test_cod_checkout_broadcasts_after_commit_without_waiting_for_celery(
+        self, broadcast_order_created, queue_notification
+    ):
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "PICKUP",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/orders/checkout/", payload, format="json"
+            )
+
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(id=response.data["order"]["id"])
+        broadcast_order_created.assert_called_once_with(order)
+        queue_notification.assert_called_once_with(str(order.id))
+
     def test_pickup_quote_returns_final_totals_without_creating_order(self):
         self.client.force_authenticate(user=self.customer)
 
