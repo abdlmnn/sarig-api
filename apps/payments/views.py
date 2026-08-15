@@ -9,6 +9,7 @@ import logging
 from .models import PaymentTransaction, PaymentStatus
 from .services import PayMongoService
 from apps.orders.models import OrderStatus
+from apps.common.realtime import broadcast_realtime_event
 from apps.users.notifications import PushNotificationService
 
 logger = logging.getLogger(__name__)
@@ -112,10 +113,16 @@ class PayMongoWebhookView(APIView):
                         exc,
                     )
 
-                # Handle Auto-Acceptance
-                # Notify Merchant (Push Notification)
-                from apps.users.notifications import PushNotificationService
+                broadcast_realtime_event(
+                    "order_created",
+                    {
+                        "order_id": str(order.id),
+                        "store_id": str(order.store_id),
+                        "status": order.status,
+                    },
+                )
 
+                # Handle Auto-Acceptance
                 PushNotificationService.notify_new_order(order.store.owner, order.id)
 
                 if order.store.auto_accept_orders:
@@ -155,6 +162,9 @@ class PayMongoWebhookView(APIView):
             order.status = OrderStatus.CANCELLED
             order.save()
             order.broadcast_status_update()
+            PushNotificationService.notify_order_status(
+                order.customer, "FAILED", order.id
+            )
 
         elif event_type in self.EXPIRED_EVENTS:
             payment_tx.status = PaymentStatus.EXPIRED
@@ -164,6 +174,9 @@ class PayMongoWebhookView(APIView):
             order.status = OrderStatus.CANCELLED
             order.save()
             order.broadcast_status_update()
+            PushNotificationService.notify_order_status(
+                order.customer, "EXPIRED", order.id
+            )
 
         return Response({"status": "Webhook received"})
 

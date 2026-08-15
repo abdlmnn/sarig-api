@@ -95,6 +95,7 @@ class Order(models.Model):
     def broadcast_status_update(self):
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
+        from apps.common.realtime import broadcast_realtime_event
         
         channel_layer = get_channel_layer()
         try:
@@ -115,6 +116,16 @@ class Order(models.Model):
                     "message": f"SYSTEM: Order is {self.status}. Chat is now closed.",
                     "sender": "System",
                     "timestamp": str(self.updated_at)
+                }
+            )
+
+            # 3. Notify global realtime stream (admin and merchant dashboards)
+            broadcast_realtime_event(
+                "order_updated",
+                {
+                    "order_id": str(self.id),
+                    "store_id": str(self.store_id),
+                    "status": self.status,
                 }
             )
         except Exception as exc:

@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.orders.models import Order, OrderStatus
-from apps.users.models import User
+from apps.users.models import Role, User
 from apps.vendors.models import BusinessVertical, Store, StoreManualOverride
 
 
@@ -21,6 +21,8 @@ class AdminMerchantActionTests(TestCase):
             email="merchant-operations@example.com",
             password="password123",
         )
+        merchant_role, _ = Role.objects.get_or_create(name="Merchant")
+        self.merchant.roles.add(merchant_role)
         self.customer = User.objects.create_user(
             username="customer-operations",
             email="customer-operations@example.com",
@@ -105,3 +107,32 @@ class AdminMerchantActionTests(TestCase):
         self.client.force_authenticate(self.merchant)
 
         self.assertEqual(self.act("STOP_ORDERS").status_code, 403)
+
+    def test_admin_merchant_payload_reflects_availability(self):
+        self.client.force_authenticate(self.merchant)
+        open_toggle = self.client.patch(
+            "/api/v1/merchant/store/status/",
+            {"status": "OPEN"},
+            format="json",
+        )
+        self.assertEqual(open_toggle.status_code, 200)
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/v1/operations/merchants")
+        self.assertEqual(response.status_code, 200)
+        merchant = response.data["data"]["items"][0]
+        self.assertTrue(merchant["is_open"])
+        self.assertIn("next_status_change", merchant)
+
+        self.client.force_authenticate(self.merchant)
+        close_toggle = self.client.patch(
+            "/api/v1/merchant/store/status/",
+            {"status": "CLOSED"},
+            format="json",
+        )
+        self.assertEqual(close_toggle.status_code, 200)
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/v1/operations/merchants")
+        merchant = response.data["data"]["items"][0]
+        self.assertFalse(merchant["is_open"])

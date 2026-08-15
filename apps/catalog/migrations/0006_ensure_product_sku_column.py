@@ -1,6 +1,23 @@
 from django.db import migrations
 
 
+def ensure_sku_column(apps, schema_editor):
+    table_name = "catalog_product"
+    column_names = {
+        column.name
+        for column in schema_editor.connection.introspection.get_table_description(
+            schema_editor.connection.cursor(),
+            table_name,
+        )
+    }
+    if "sku" in column_names:
+        return
+    schema_editor.execute(
+        "ALTER TABLE catalog_product "
+        "ADD COLUMN sku varchar(80) NOT NULL DEFAULT ''"
+    )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -8,16 +25,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(
-            sql=(
-                "ALTER TABLE catalog_product "
-                "ADD COLUMN IF NOT EXISTS sku varchar(80) NOT NULL DEFAULT '';"
-            ),
-            reverse_sql=(
-                "ALTER TABLE catalog_product "
-                "DROP COLUMN IF EXISTS sku;"
-            ),
-        ),
+        migrations.RunPython(ensure_sku_column, reverse_code=migrations.RunPython.noop),
         migrations.RunSQL(
             sql=(
                 "CREATE INDEX IF NOT EXISTS catalog_product_sku_idx "

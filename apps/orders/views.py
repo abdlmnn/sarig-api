@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from rest_framework import status, permissions
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.reverse import reverse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
@@ -15,6 +16,9 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import logging
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from apps.common.realtime import broadcast_realtime_event
 from apps.orders.models import (
     CustomerCart,
     DeliveryMethod,
@@ -34,6 +38,37 @@ from .services import ACTIVE_STATUSES, build_store_order_activity, merchant_orde
 
 
 logger = logging.getLogger(__name__)
+
+
+def _broadcast_order_created(order):
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"store_{order.store_id}_orders",
+                {
+                    "type": "order_alert",
+                    "message": {
+                        "order_id": str(order.id),
+                        "total_amount": str(order.total_amount),
+                        "customer_name": order.customer.get_full_name()
+                        or order.customer.username,
+                    },
+                },
+            )
+    except Exception as exc:
+        logger.warning(
+            "Failed to broadcast COD order alert for order %s: %s", order.id, exc
+        )
+
+    broadcast_realtime_event(
+        "order_created",
+        {
+            "order_id": str(order.id),
+            "store_id": str(order.store_id),
+            "status": order.status,
+        },
+    )
 
 
 class StoreOrderActivityView(APIView):
@@ -346,50 +381,33 @@ class CheckoutView(APIView):
                 status=PaymentStatus.PENDING # COD is pending until delivery
             )
             
-            # Trigger real-time alert to Merchant for COD
-            from channels.layers import get_channel_layer
-            from asgiref.sync import async_to_sync
-            
-            channel_layer = get_channel_layer()
-            store_group = f"store_{order.store.id}_orders"
-            
-            try:
-                async_to_sync(channel_layer.group_send)(
-                    store_group,
-                    {
-                        "type": "order_alert",
-                        "message": {
-                            "order_id": str(order.id),
-                            "total_amount": str(order.total_amount),
-                            "customer_name": order.customer.get_full_name() or order.customer.username,
-                        }
-                    }
-                )
-            except Exception as exc:
-                logger.warning("Failed to broadcast COD order alert for order %s: %s", order.id, exc)
-            
-            # Notify Merchant (Push Notification)
-            from apps.users.notifications import PushNotificationService
-            PushNotificationService.notify_new_order(store.owner, order.id)
-
             # 5. Handle Auto-Acceptance
             if store.auto_accept_orders:
                 order.status = OrderStatus.ACCEPTED
                 order.save()
-                order.broadcast_status_update()
-            else:
-                # Schedule auto-cancellation in 5 minutes (for manual acceptance)
-                from .tasks import auto_cancel_stale_order
-                transaction.on_commit(
-                    lambda: auto_cancel_stale_order.apply_async(
-                        (str(order.id),), countdown=600
+
+            from .tasks import notify_cod_order_created
+
+            def notify_after_commit():
+                _broadcast_order_created(order)
+                try:
+                    notify_cod_order_created.delay(str(order.id))
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to queue COD notification for order %s: %s",
+                        order.id,
+                        exc,
                     )
-                )
+
+            transaction.on_commit(notify_after_commit)
 
             return Response({
                 "status": "success",
                 "message": "Order placed via COD.",
-                "order": OrderSerializer(order, context={"request": request}).data
+                "order": OrderSerializer(order, context={"request": request}).data,
+                "tracking_url": reverse(
+                    "v1:customer-order-detail", args=[order.id], request=request
+                ),
             }, status=status.HTTP_201_CREATED)
 
         elif requested_method == PaymentMethod.PAYMONGO:

@@ -163,10 +163,13 @@ class MerchantDashboardOverviewTests(TestCase):
         self.assertEqual(response.data["settlement"]["expected_payout"]["value"], "892.50")
         self.assertTrue(response.data["active_orders"])
         active_orders = response.data["active_orders"]
-        order_ids = [item["order_id"] for item in active_orders]
-        self.assertEqual(order_ids, [str(pending.id)])
-        self.assertEqual(len(order_ids), len(set(order_ids)))
-        self.assertTrue(all(item["status"] == "NEW" for item in active_orders))
+        orders_by_id = {item["order_id"]: item for item in active_orders}
+        self.assertEqual(
+            set(orders_by_id), {str(pending.id), str(preparing.id), str(ready.id)}
+        )
+        self.assertEqual(orders_by_id[str(pending.id)]["status"], "NEW")
+        self.assertEqual(orders_by_id[str(preparing.id)]["status"], "PREPARING")
+        self.assertEqual(orders_by_id[str(ready.id)]["status"], "READY")
         self.assertTrue(all(item["id"].startswith("SRG-") for item in active_orders))
         self.assertTrue(response.data["delivery_lanes"])
 

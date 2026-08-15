@@ -13,7 +13,7 @@ from apps.catalog.models import (
 )
 from apps.catalog.serializers import ProductSerializer
 from apps.users.models import Role, User
-from apps.vendors.models import BusinessVertical, Store
+from apps.vendors.models import BusinessVertical, Store, StoreManualOverride
 
 
 class ProductArchitectureTests(TestCase):
@@ -124,6 +124,9 @@ class CatalogProductManagementRouteTests(TestCase):
             longitude="124.283900",
             street_address="Banggolo",
             city="Marawi City",
+            is_open=True,
+            is_active=True,
+            manual_override=StoreManualOverride.OPEN_NOW,
         )
         self.category = Category.objects.create(store=self.store, name="Meals", slug="meals")
         Product.objects.create(category=self.category, name="Chicken Pastil", price=Decimal("65.00"))

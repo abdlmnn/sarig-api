@@ -1,4 +1,17 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env", override=False)
+gdal_library_path = os.getenv("GDAL_LIBRARY_PATH", "")
+if os.name == "nt" and gdal_library_path:
+    gdal_directory = os.path.dirname(gdal_library_path)
+    if os.path.isdir(gdal_directory):
+        os.environ["PATH"] = gdal_directory + os.pathsep + os.environ.get("PATH", "")
+        os.add_dll_directory(gdal_directory)
+
 from celery import Celery
 
 # Set the default Django settings module for the 'celery' program.

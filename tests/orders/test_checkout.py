@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from apps.users.models import User, Role
-from apps.vendors.models import Store, BusinessVertical
+from apps.vendors.models import BusinessVertical, Store, StoreManualOverride
 from apps.catalog.models import Category, ModifierGroup, ModifierItem, Product
 from apps.orders.models import Order
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
@@ -44,6 +44,9 @@ class CheckoutFlowTests(TestCase):
             longitude=125.455300,
             street_address="Sample St",
             city="Marawi",
+            is_open=True,
+            is_active=True,
+            manual_override=StoreManualOverride.OPEN_NOW,
         )
         self.category = Category.objects.create(store=self.store, name="Meals", slug="meals")
         self.product = Product.objects.create(
@@ -64,6 +67,9 @@ class CheckoutFlowTests(TestCase):
             longitude=125.470000,
             street_address="Other St",
             city="Marawi",
+            is_open=True,
+            is_active=True,
+            manual_override=StoreManualOverride.OPEN_NOW,
         )
         self.other_category = Category.objects.create(
             store=self.other_store, name="Drinks", slug="drinks"
@@ -86,6 +92,11 @@ class CheckoutFlowTests(TestCase):
         res = self.client.post("/api/v1/orders/checkout/", payload, format="json")
         self.assertEqual(res.status_code, 201)
         order = Order.objects.get(id=res.data["order"]["id"])
+        self.assertEqual(
+            res.data["tracking_url"],
+            f"http://testserver/api/v1/orders/{order.id}/",
+        )
+        self.assertIn("tracking", res.data["order"])
         self.assertEqual(order.subtotal, Decimal("200.00"))
         self.assertEqual(order.delivery_fee, Decimal("0.00"))
         self.assertEqual(order.system_fee, Decimal("10.00"))
@@ -95,6 +106,32 @@ class CheckoutFlowTests(TestCase):
                 order=order, payment_method=PaymentMethod.COD
             ).exists()
         )
+
+    @patch("apps.orders.tasks.notify_cod_order_created.delay")
+    @patch("apps.orders.views._broadcast_order_created")
+    def test_cod_checkout_broadcasts_after_commit_without_waiting_for_celery(
+        self, broadcast_order_created, queue_notification
+    ):
+        self.client.force_authenticate(user=self.customer)
+        payload = {
+            "store_id": str(self.store.id),
+            "items": [{"product_id": str(self.product.id), "quantity": 1}],
+            "payment_method": "COD",
+            "delivery_method": "PICKUP",
+            "address_text": "Home",
+            "latitude": "7.190700",
+            "longitude": "125.455300",
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/orders/checkout/", payload, format="json"
+            )
+
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(id=response.data["order"]["id"])
+        broadcast_order_created.assert_called_once_with(order)
+        queue_notification.assert_called_once_with(str(order.id))
 
     def test_pickup_quote_returns_final_totals_without_creating_order(self):
         self.client.force_authenticate(user=self.customer)

@@ -10,6 +10,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+@shared_task
+def notify_cod_order_created(order_id):
+    """Send the non-critical merchant push notification for a COD order."""
+    try:
+        order = Order.objects.select_related("store__owner", "customer").get(id=order_id)
+        PushNotificationService.notify_new_order(order.store.owner, order.id)
+    except Order.DoesNotExist:
+        logger.warning("COD order %s no longer exists for notification", order_id)
+    except Exception:
+        logger.exception("Failed to notify about COD order %s", order_id)
+
+
 def _attempt_order_refund(order):
     payment_tx = order.payment_attempts.filter(
         status=PaymentStatus.SUCCESS,
@@ -49,6 +61,11 @@ def auto_cancel_stale_orders():
             order.status = OrderStatus.CANCELLED
             order.save()
             order.broadcast_status_update()
+
+            order.payment_attempts.filter(
+                payment_method=PaymentMethod.PAYMONGO,
+                status=PaymentStatus.PENDING,
+            ).update(status=PaymentStatus.EXPIRED)
             
             refunded = _attempt_order_refund(order)
             PushNotificationService.notify_order_status(
@@ -70,6 +87,11 @@ def auto_cancel_stale_order(order_id):
         order.status = OrderStatus.CANCELLED
         order.save()
         order.broadcast_status_update()
+
+        order.payment_attempts.filter(
+            payment_method=PaymentMethod.PAYMONGO,
+            status=PaymentStatus.PENDING,
+        ).update(status=PaymentStatus.EXPIRED)
         
         refunded = _attempt_order_refund(order)
         PushNotificationService.notify_order_status(

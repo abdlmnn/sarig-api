@@ -56,6 +56,10 @@ if USE_POSTGIS and "django.contrib.gis" not in INSTALLED_APPS:
 
 if GDAL_LIBRARY_PATH:
     os.environ["GDAL_LIBRARY_PATH"] = GDAL_LIBRARY_PATH
+    if os.name == "nt":
+        gdal_directory = os.path.dirname(GDAL_LIBRARY_PATH)
+        if os.path.isdir(gdal_directory):
+            os.add_dll_directory(gdal_directory)
 
 ASGI_APPLICATION = "config.asgi.application"
 
@@ -93,6 +97,10 @@ CELERY_BEAT_SCHEDULE = {
     "expire-pending-rides-every-minute": {
         "task": "apps.rides.tasks.expire_pending_rides_task",
         "schedule": 60.0,
+    },
+    "auto-cancel-stale-orders-every-5-minutes": {
+        "task": "apps.orders.tasks.auto_cancel_stale_orders",
+        "schedule": 300.0,
     },
 }
 
