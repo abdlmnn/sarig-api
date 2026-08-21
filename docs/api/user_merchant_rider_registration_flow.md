@@ -7,7 +7,7 @@ The current backend flow is:
 2. Merchant or rider submits a public onboarding application.
 3. Admin reviews the application.
 4. If approved, backend sends account setup link.
-5. Applicant sets username/password through the setup token.
+5. Applicant sets a password through the setup token and then logs in with email.
 
 Do not create merchant or rider login credentials during application submission.
 
@@ -70,7 +70,8 @@ Success response:
   "application_id": "MR-1028",
   "status": "PENDING",
   "message": "Merchant application submitted for review.",
-  "confirmation_email_sent": true
+  "confirmation_email_sent": false,
+  "confirmation_email_queued": true
 }
 ```
 
@@ -121,7 +122,8 @@ Success response:
   "application_id": "RD-2044",
   "status": "PENDING",
   "message": "Rider application submitted for review.",
-  "confirmation_email_sent": true
+  "confirmation_email_sent": false,
+  "confirmation_email_queued": true
 }
 ```
 
@@ -163,7 +165,9 @@ Body:
 
 ```json
 {
-  "username": "sultanfood",
-  "password": "secure-password"
+  "password": "secure-password",
+  "password_confirm": "secure-password"
 }
 ```
+
+The backend generates an internal username. Merchant and rider login should use the application email and selected password. Successful setup consumes the token and changes the application status from `APPROVED` to `ACTIVE`.
