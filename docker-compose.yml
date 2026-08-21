@@ -68,6 +68,25 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  celery-beat:
+    build: .
+    command: celery -A config beat -l info
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.prod}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      USE_POSTGIS: "1"
+      REDIS_HOST: redis
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.27-alpine
     restart: always
