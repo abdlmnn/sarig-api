@@ -13,6 +13,7 @@ class ApplicationStatus(models.TextChoices):
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
     REQUEST_CHANGES = "REQUEST_CHANGES", "Changes Requested"
+    ACTIVE = "ACTIVE", "Active"
 
 
 class BusinessType(models.TextChoices):
@@ -207,17 +208,70 @@ class ApplicationEditToken(models.Model):
 
 class AccountSetupToken(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, editable=False)
+    # Retained only to resolve links issued before signed setup invitations were introduced.
+    token = models.UUIDField(unique=True, db_index=True, editable=False, null=True, blank=True)
     application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, db_index=True)
     application_type = models.CharField(max_length=20)
     expires_at = models.DateTimeField()
     used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property
     def is_active(self):
-        return self.used_at is None and self.expires_at > timezone.now()
+        return self.used_at is None and self.revoked_at is None and self.expires_at > timezone.now()
 
     def mark_used(self):
         self.used_at = timezone.now()
         self.save(update_fields=["used_at"])
+
+
+class NotificationEvent(models.TextChoices):
+    APPLICATION_SUBMITTED = "APPLICATION_SUBMITTED", "Application Submitted"
+    MERCHANT_APPROVED = "MERCHANT_APPROVED", "Merchant Approved"
+    RIDER_APPROVED = "RIDER_APPROVED", "Rider Approved"
+    APPLICATION_REJECTED = "APPLICATION_REJECTED", "Application Rejected"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED", "Changes Requested"
+    ACCOUNT_ACTIVATED = "ACCOUNT_ACTIVATED", "Account Activated"
+
+
+class NotificationChannel(models.TextChoices):
+    EMAIL = "EMAIL", "Email"
+    SMS = "SMS", "SMS"
+    IN_APP = "IN_APP", "In App"
+
+
+class NotificationDeliveryStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    PROCESSING = "PROCESSING", "Processing"
+    SENT = "SENT", "Sent"
+    FAILED = "FAILED", "Failed"
+    SKIPPED = "SKIPPED", "Skipped"
+
+
+class OnboardingNotificationDelivery(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.CharField(max_length=40, choices=NotificationEvent.choices)
+    channel = models.CharField(max_length=20, choices=NotificationChannel.choices)
+    application_id = models.CharField(max_length=APPLICATION_ID_MAX_LENGTH, db_index=True)
+    application_type = models.CharField(max_length=20)
+    recipient = models.CharField(max_length=320)
+    template_key = models.CharField(max_length=100, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=64, unique=True)
+    status = models.CharField(
+        max_length=20,
+        choices=NotificationDeliveryStatus.choices,
+        default=NotificationDeliveryStatus.PENDING,
+        db_index=True,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+    next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["application_id", "event"])]

@@ -2,9 +2,10 @@ import mimetypes
 
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.db import IntegrityError, transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
-from django.urls import reverse
+from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -12,7 +13,6 @@ from rest_framework.views import APIView
 
 from .models import DeliveryTime
 from .models import (
-    AccountSetupToken,
     ApplicationEditToken,
     ApplicationStatus,
     ApplicationStatusHistory,
@@ -28,7 +28,8 @@ from .serializers import (
     RequestChangesSerializer,
     RiderApplicationSerializer,
 )
-from .services import ApplicationService, application_type, get_application
+from .services import ApplicationService, application_type, get_application, record_history
+from .tokens import resolve_account_setup_token
 
 
 MERCHANT_DOCUMENT_FIELDS = {
@@ -270,24 +271,10 @@ def next_action_for(application):
         ApplicationStatus.PENDING: "Wait for admin review.",
         ApplicationStatus.UNDER_REVIEW: "Your application is being reviewed.",
         ApplicationStatus.APPROVED: "Check your email for the account setup link.",
+        ApplicationStatus.ACTIVE: "Your account is active. You can sign in to the dashboard.",
         ApplicationStatus.REJECTED: "Review the rejection reason.",
         ApplicationStatus.REQUEST_CHANGES: "Update the requested fields using the secure edit link sent to your email.",
     }.get(application.status, "")
-
-
-def latest_edit_url(request, application):
-    token = (
-        ApplicationEditToken.objects.filter(
-            application_id=application.application_id,
-            application_type=application_type(application),
-            revoked_at__isnull=True,
-        )
-        .order_by("-created_at")
-        .first()
-    )
-    if not token or not token.is_active:
-        return None
-    return request.build_absolute_uri(reverse("v1:onboarding-application-edit", kwargs={"token": token.token}))
 
 
 def status_payload(request, application):
@@ -301,19 +288,21 @@ def status_payload(request, application):
         "admin_remarks": application.admin_remarks or "",
         "next_action": next_action_for(application),
         "can_edit": application.status == ApplicationStatus.REQUEST_CHANGES,
-        "edit_url": latest_edit_url(request, application) if application.status == ApplicationStatus.REQUEST_CHANGES else None,
+        # The public application ID must never disclose a bearer edit credential.
+        "edit_url": None,
     }
     if isinstance(application, MerchantApplication):
         payload["business_name"] = application.business_name
     return payload
 
 
-def public_success_payload(application, message, confirmation_email_sent):
+def public_success_payload(application, message, confirmation_email_queued):
     return {
         "application_id": application.application_id,
         "status": application.status,
         "message": message,
-        "confirmation_email_sent": confirmation_email_sent,
+        "confirmation_email_sent": False,
+        "confirmation_email_queued": confirmation_email_queued,
     }
 
 
@@ -363,10 +352,11 @@ class MerchantApplicationCreateView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        application = serializer.save(status=ApplicationStatus.PENDING)
-        confirmation_sent = ApplicationService.send_submission_confirmation(application)
+        with transaction.atomic():
+            application = serializer.save(status=ApplicationStatus.PENDING)
+            confirmation_queued = ApplicationService.send_submission_confirmation(application)
         return Response(
-            public_success_payload(application, "Merchant application submitted for review.", confirmation_sent),
+            public_success_payload(application, "Merchant application submitted for review.", confirmation_queued),
             status=status.HTTP_201_CREATED,
         )
 
@@ -380,10 +370,11 @@ class RiderApplicationCreateView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        application = serializer.save(status=ApplicationStatus.PENDING)
-        confirmation_sent = ApplicationService.send_submission_confirmation(application)
+        with transaction.atomic():
+            application = serializer.save(status=ApplicationStatus.PENDING)
+            confirmation_queued = ApplicationService.send_submission_confirmation(application)
         return Response(
-            public_success_payload(application, "Rider application submitted for review.", confirmation_sent),
+            public_success_payload(application, "Rider application submitted for review.", confirmation_queued),
             status=status.HTTP_201_CREATED,
         )
 
@@ -506,17 +497,55 @@ class AdminApproveApplicationView(APIView):
 
     def post(self, request, application_id):
         application = get_application_or_404(application_id)
-        if isinstance(application, MerchantApplication):
-            result = ApplicationService.approve_merchant(application, actor=request.user)
-        else:
-            result = ApplicationService.approve_rider(application, actor=request.user)
-        token = getattr(result, "token", None)
+        try:
+            if isinstance(application, MerchantApplication):
+                ApplicationService.approve_merchant(application, actor=request.user)
+            else:
+                ApplicationService.approve_rider(application, actor=request.user)
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
                 "application_id": application.application_id,
                 "status": ApplicationStatus.APPROVED,
                 "message": "Application approved.",
-                "setup_token": str(token) if token else None,
+                "setup_token": None,
+            }
+        )
+
+
+class AdminResendSetupInvitationView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, application_id):
+        application = get_application_or_404(application_id)
+        try:
+            ApplicationService.reissue_setup_invitation(application, actor=request.user)
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "application_id": application.application_id,
+                "status": ApplicationStatus.APPROVED,
+                "message": "A new account setup invitation was queued.",
+            }
+        )
+
+
+class AdminResendChangeRequestView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, application_id):
+        application = get_application_or_404(application_id)
+        try:
+            ApplicationService.reissue_change_request(application, actor=request.user)
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "application_id": application.application_id,
+                "status": ApplicationStatus.REQUEST_CHANGES,
+                "message": "A new application edit invitation was queued.",
             }
         )
 
@@ -525,22 +554,33 @@ class AdminRequestChangesView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request, application_id):
+        application = get_application_or_404(application_id)
         serializer = RequestChangesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        application = get_application_or_404(application_id)
+        serializer_class = MerchantApplicationSerializer if isinstance(application, MerchantApplication) else RiderApplicationSerializer
+        editable_fields = set(serializer_class.Meta.fields) - set(serializer_class.Meta.read_only_fields)
+        invalid_fields = set(serializer.validated_data["requested_fields"]) - editable_fields
+        if invalid_fields:
+            return Response(
+                {"requested_fields": [f"Unknown or read-only field: {field}" for field in sorted(invalid_fields)]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         remarks = serializer.validated_data.get("email_message") or serializer.validated_data.get("admin_remarks") or ""
-        edit_token = ApplicationService.request_changes(
-            application,
-            remarks,
-            serializer.validated_data["requested_fields"],
-            actor=request.user,
-        )
+        try:
+            ApplicationService.request_changes(
+                application,
+                remarks,
+                serializer.validated_data["requested_fields"],
+                actor=request.user,
+            )
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
                 "application_id": application.application_id,
                 "status": ApplicationStatus.REQUEST_CHANGES,
                 "message": "Change request sent.",
-                "edit_token": str(edit_token.token),
+                "edit_token": None,
             }
         )
 
@@ -553,7 +593,10 @@ class AdminRejectApplicationView(APIView):
         serializer.is_valid(raise_exception=True)
         application = get_application_or_404(application_id)
         remarks = serializer.validated_data.get("email_message") or serializer.validated_data.get("admin_remarks") or ""
-        ApplicationService.reject_application(application, remarks, actor=request.user)
+        try:
+            ApplicationService.reject_application(application, remarks, actor=request.user)
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
                 "application_id": application.application_id,
@@ -568,8 +611,9 @@ class ApplicationEditTokenView(APIView):
     parser_classes = [MultiPartParser, FormParser]
     throttle_scope = "onboarding"
 
-    def get_token(self, token):
-        edit_token = get_object_or_404(ApplicationEditToken, token=token)
+    def get_token(self, token, *, for_update=False):
+        queryset = ApplicationEditToken.objects.select_for_update() if for_update else ApplicationEditToken.objects.all()
+        edit_token = get_object_or_404(queryset, token=token)
         if not edit_token.is_active:
             return None
         return edit_token
@@ -580,6 +624,7 @@ class ApplicationEditTokenView(APIView):
             return Response({"detail": "Edit token is expired or revoked."}, status=status.HTTP_400_BAD_REQUEST)
         application = get_application_or_404(edit_token.application_id)
         serializer = MerchantApplicationSerializer(application) if isinstance(application, MerchantApplication) else RiderApplicationSerializer(application)
+        application_data = {field: serializer.data.get(field) for field in edit_token.requested_fields}
         return Response(
             {
                 "application_id": application.application_id,
@@ -587,22 +632,30 @@ class ApplicationEditTokenView(APIView):
                 "status": application.status,
                 "requested_fields": edit_token.requested_fields,
                 "admin_remarks": application.admin_remarks,
-                "application": serializer.data,
+                "application": application_data,
             }
         )
 
     def patch(self, request, token):
-        edit_token = self.get_token(token)
-        if not edit_token:
-            return Response({"detail": "Edit token is expired or revoked."}, status=status.HTTP_400_BAD_REQUEST)
-        validation_serializer = ApplicationEditSerializer(data=request.data, context={"edit_token": edit_token})
-        validation_serializer.is_valid(raise_exception=True)
-        application = get_application_or_404(edit_token.application_id)
-        serializer_class = MerchantApplicationSerializer if isinstance(application, MerchantApplication) else RiderApplicationSerializer
-        serializer = serializer_class(application, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(status=ApplicationStatus.PENDING, admin_remarks="", requested_fields=[])
-        edit_token.revoke()
+        with transaction.atomic():
+            edit_token = self.get_token(token, for_update=True)
+            if not edit_token:
+                return Response({"detail": "Edit token is expired or revoked."}, status=status.HTTP_400_BAD_REQUEST)
+            validation_serializer = ApplicationEditSerializer(data=request.data, context={"edit_token": edit_token})
+            validation_serializer.is_valid(raise_exception=True)
+            application = get_application_or_404(edit_token.application_id)
+            application = type(application).objects.select_for_update().get(pk=application.pk)
+            if application.status != ApplicationStatus.REQUEST_CHANGES:
+                return Response({"detail": "This application is not awaiting changes."}, status=status.HTTP_400_BAD_REQUEST)
+            serializer_class = MerchantApplicationSerializer if isinstance(application, MerchantApplication) else RiderApplicationSerializer
+            serializer = serializer_class(application, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            record_history(application, ApplicationStatus.PENDING)
+            application = serializer.save(status=ApplicationStatus.PENDING, admin_remarks="", requested_fields=[])
+            ApplicationEditToken.objects.filter(
+                application_id=application.application_id,
+                revoked_at__isnull=True,
+            ).update(revoked_at=timezone.now())
         return Response(status_payload(request, application))
 
 
@@ -611,8 +664,8 @@ class AccountSetupView(APIView):
     throttle_scope = "onboarding"
 
     def get(self, request, token):
-        setup_token = get_object_or_404(AccountSetupToken, token=token)
-        if not setup_token.is_active:
+        setup_token = resolve_account_setup_token(token)
+        if not setup_token or not setup_token.is_active:
             return Response({"detail": "Account setup token is expired or used."}, status=status.HTTP_400_BAD_REQUEST)
         application = get_application_or_404(setup_token.application_id)
         return Response(
@@ -626,15 +679,21 @@ class AccountSetupView(APIView):
         )
 
     def post(self, request, token):
-        setup_token = get_object_or_404(AccountSetupToken, token=token)
+        setup_token = resolve_account_setup_token(token)
+        if not setup_token:
+            return Response({"detail": "Account setup token is invalid."}, status=status.HTTP_400_BAD_REQUEST)
         serializer = AccountSetupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
             user = ApplicationService.complete_account_setup(
                 setup_token,
-                serializer.validated_data["username"],
                 serializer.validated_data["password"],
             )
         except ValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"username": user.username, "message": "Account setup completed."}, status=status.HTTP_201_CREATED)
+            return Response({"detail": "; ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError:
+            return Response(
+                {"detail": "The account could not be created because its login details are already in use."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"email": user.email, "message": "Account setup completed."}, status=status.HTTP_201_CREATED)

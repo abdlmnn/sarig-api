@@ -190,6 +190,8 @@ class AdminOnboardingApiTests(TestCase):
 
     def test_actions_return_frontend_messages(self):
         approve_response = self.client.post(f"/api/v1/onboarding/applications/{self.merchant.application_id}/approve/")
+        self.rider.status = ApplicationStatus.PENDING
+        self.rider.save(update_fields=["status"])
         changes_response = self.client.post(
             f"/api/v1/onboarding/applications/{self.rider.application_id}/request-changes/",
             {"admin_remarks": "Please upload clearer documents.", "requested_fields": ["nbi_clearance"]},
@@ -203,8 +205,10 @@ class AdminOnboardingApiTests(TestCase):
 
         self.assertEqual(approve_response.status_code, 200)
         self.assertEqual(approve_response.data["message"], "Application approved.")
+        self.assertIsNone(approve_response.data["setup_token"])
         self.assertEqual(changes_response.status_code, 200)
         self.assertEqual(changes_response.data["message"], "Change request sent.")
+        self.assertIsNone(changes_response.data["edit_token"])
         self.assertEqual(reject_response.status_code, 200)
         self.assertEqual(reject_response.data["message"], "Application rejected.")
 

@@ -5,7 +5,7 @@ from django.db.models import Count, Min, Sum
 from django.utils import timezone
 
 from apps.marketing.models import PromoCode
-from apps.onboarding.models import ApplicationStatus, MerchantApplication, RiderApplication
+from apps.onboarding.models import ApplicationStatus, ApplicationStatusHistory, MerchantApplication, RiderApplication
 from apps.orders.models import Order, OrderStatus
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.reviews.models import OrderReview
@@ -260,15 +260,18 @@ def dashboard_stats(date_from=None, date_to=None):
 
 def onboarding_summary():
     today = timezone.localdate()
+    completed_statuses = [ApplicationStatus.APPROVED, ApplicationStatus.ACTIVE]
     return {
-        "merchants": MerchantApplication.objects.exclude(status=ApplicationStatus.APPROVED).count(),
-        "riders": RiderApplication.objects.exclude(status=ApplicationStatus.APPROVED).count(),
+        "merchants": MerchantApplication.objects.exclude(status__in=completed_statuses).count(),
+        "riders": RiderApplication.objects.exclude(status__in=completed_statuses).count(),
         "ready": MerchantApplication.objects.filter(status=ApplicationStatus.PENDING).count()
         + RiderApplication.objects.filter(status=ApplicationStatus.PENDING).count(),
         "changes_requested": MerchantApplication.objects.filter(status=ApplicationStatus.REQUEST_CHANGES).count()
         + RiderApplication.objects.filter(status=ApplicationStatus.REQUEST_CHANGES).count(),
-        "approved_today": MerchantApplication.objects.filter(status=ApplicationStatus.APPROVED, updated_at__date=today).count()
-        + RiderApplication.objects.filter(status=ApplicationStatus.APPROVED, updated_at__date=today).count(),
+        "approved_today": ApplicationStatusHistory.objects.filter(
+            to_status=ApplicationStatus.APPROVED,
+            created_at__date=today,
+        ).values("application_id").distinct().count(),
         "rejected_today": MerchantApplication.objects.filter(status=ApplicationStatus.REJECTED, updated_at__date=today).count()
         + RiderApplication.objects.filter(status=ApplicationStatus.REJECTED, updated_at__date=today).count(),
     }
