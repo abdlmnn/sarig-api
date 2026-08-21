@@ -79,7 +79,6 @@ DEFAULT_TEMPLATES = {
             "Hi {{ applicant_name }},\n\n"
             "Please update your application {{ application_id }}.\n\n"
             "Admin remarks:\n{{ remarks }}\n\n"
-            "Requested fields: {{ requested_fields }}\n\n"
             "Edit your application here:\n{{ edit_url }}\n\n"
             "This link expires in 7 days."
         ),

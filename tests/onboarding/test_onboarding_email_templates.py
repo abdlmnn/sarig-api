@@ -77,4 +77,4 @@ class OnboardingEmailTemplateTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].subject, "Sarig application changes requested")
         self.assertIn("Please upload a clearer license.", mail.outbox[0].body)
-        self.assertIn("professional_drivers_license", mail.outbox[0].body)
+        self.assertNotIn("Requested fields:", mail.outbox[0].body)
