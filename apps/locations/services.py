@@ -145,6 +145,7 @@ class GeoapifyService:
 
 class OpenRouteService:
     DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car"
+    GEOJSON_DIRECTIONS_URL = f"{DIRECTIONS_URL}/geojson"
 
     @classmethod
     def route_estimate(cls, origin, destination):
@@ -183,6 +184,59 @@ class OpenRouteService:
             "route_geometry": route.get("geometry"),
         }
 
+    @classmethod
+    def route_geojson(cls, origin, destination):
+        api_key = settings.OPENROUTESERVICE_API_KEY
+        if not _provider_enabled(api_key):
+            raise LocationProviderError("OpenRouteService API key is not configured.")
+
+        response = requests.post(
+            cls.GEOJSON_DIRECTIONS_URL,
+            headers={
+                "Authorization": api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "coordinates": [
+                    [float(origin["longitude"]), float(origin["latitude"])],
+                    [float(destination["longitude"]), float(destination["latitude"])],
+                ],
+                "instructions": False,
+            },
+            timeout=_timeout(),
+        )
+        response.raise_for_status()
+        features = response.json().get("features", [])
+        if not features:
+            raise LocationProviderError("OpenRouteService returned no route.")
+
+        feature = features[0]
+        geometry = feature.get("geometry") or {}
+        coordinates = geometry.get("coordinates") or []
+        summary = (feature.get("properties") or {}).get("summary") or {}
+        if geometry.get("type") != "LineString" or len(coordinates) < 2:
+            raise LocationProviderError("OpenRouteService returned invalid route geometry.")
+        if summary.get("distance") is None or summary.get("duration") is None:
+            raise LocationProviderError("OpenRouteService returned an incomplete route summary.")
+
+        for coordinate in coordinates:
+            if not isinstance(coordinate, (list, tuple)) or len(coordinate) < 2:
+                raise LocationProviderError("OpenRouteService returned invalid route coordinates.")
+            float(coordinate[0])
+            float(coordinate[1])
+
+        distance_km = Decimal(str(summary["distance"])) / Decimal("1000")
+        duration_minutes = int(round(float(summary["duration"]) / 60))
+        return {
+            "distance_km": distance_km.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            "duration_minutes": max(duration_minutes, 1),
+            "provider": "openrouteservice",
+            "route_geometry": {
+                "type": "LineString",
+                "coordinates": coordinates,
+            },
+        }
+
 
 def route_estimate(origin, destination):
     try:
@@ -193,4 +247,23 @@ def route_estimate(origin, destination):
             logger.debug("Route provider fallback used: %s", exc)
         else:
             logger.warning("Route provider fallback used: %s", exc)
+        return haversine_route_estimate(origin, destination)
+
+
+def route_geojson(origin, destination):
+    try:
+        return OpenRouteService.route_geojson(origin, destination)
+    except (
+        LocationProviderError,
+        requests.RequestException,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+    ) as exc:
+        message = str(exc)
+        if isinstance(exc, LocationProviderError) and "API key is not configured" in message:
+            logger.debug("Road route provider fallback used: %s", exc)
+        else:
+            logger.warning("Road route provider fallback used: %s", exc)
         return haversine_route_estimate(origin, destination)

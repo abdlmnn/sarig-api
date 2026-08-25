@@ -8,6 +8,7 @@ from apps.users.models import Role, User
 from apps.vendors.models import Store, BusinessVertical
 from apps.orders.models import Order, OrderStatus
 from apps.payments.models import PaymentTransaction, PaymentMethod, PaymentStatus
+from apps.riders.models import RiderProfile
 
 
 @override_settings(
@@ -126,6 +127,28 @@ class MerchantOrderActionTests(TestCase):
         self.assertEqual(res.data["payment"]["status"], PaymentStatus.SUCCESS)
         self.assertEqual(res.data["payment"]["amount"], "150.00")
         self.assertNotIn("provider_raw_response", res.data["payment"])
+
+    def test_tracking_only_exposes_rider_location_while_order_is_on_the_way(self):
+        rider = User.objects.create_user("rider", "rider@test.com", "pw12345")
+        RiderProfile.objects.create(
+            user=rider,
+            current_latitude=Decimal("7.190700"),
+            current_longitude=Decimal("125.455300"),
+        )
+        order = self._create_order(status=OrderStatus.ON_THE_WAY)
+        order.rider = rider
+        order.save(update_fields=["rider"])
+        self.client.force_authenticate(user=self.merchant)
+
+        active_response = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
+        self.assertEqual(active_response.status_code, 200)
+        self.assertEqual(active_response.data["tracking"]["rider"]["latitude"], "7.190700")
+
+        order.status = OrderStatus.DELIVERED
+        order.save(update_fields=["status"])
+        delivered_response = self.client.get(f"/api/v1/orders/{order.id}/merchant-detail/")
+        self.assertEqual(delivered_response.status_code, 200)
+        self.assertIsNone(delivered_response.data["tracking"]["rider"])
 
     def test_merchant_order_list_returns_owned_active_orders(self):
         active_order = self._create_order(status=OrderStatus.ACCEPTED)
