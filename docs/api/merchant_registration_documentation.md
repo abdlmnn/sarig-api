@@ -67,6 +67,7 @@ Do not send:
   "application_id": "MR-1028",
   "status": "PENDING",
   "message": "Merchant application submitted for review.",
-  "confirmation_email_sent": true
+  "confirmation_email_sent": false,
+  "confirmation_email_queued": true
 }
 ```

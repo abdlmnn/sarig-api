@@ -1,5 +1,6 @@
 import uuid
 import logging
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
@@ -92,6 +93,11 @@ class Order(models.Model):
     def __str__(self):
         return f"Order #{str(self.id)[:8]} - {self.store.name} - {self.status}"
 
+    def clean(self):
+        super().clean()
+        if self.status in [OrderStatus.ON_THE_WAY, OrderStatus.DELIVERED] and not self.rider_id:
+            raise ValidationError("A rider must be assigned before an order can be on the way or delivered.")
+
     def broadcast_status_update(self):
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
@@ -143,6 +149,8 @@ class OrderItem(models.Model):
 
     @property
     def total_price(self):
+        if self.quantity is None or self.unit_price is None:
+            return None
         return self.quantity * self.unit_price
 
     def __str__(self):

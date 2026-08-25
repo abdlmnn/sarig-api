@@ -19,6 +19,7 @@ import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from apps.common.realtime import broadcast_realtime_event
+from apps.locations.services import route_geojson
 from apps.orders.models import (
     CustomerCart,
     DeliveryMethod,
@@ -160,6 +161,76 @@ class CustomerOrderDetailView(APIView):
         )
 
         return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+class OrderDeliveryRouteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "locations"
+
+    def get(self, request, order_id):
+        orders = Order.objects.select_related(
+            "store",
+            "customer",
+            "rider",
+            "rider__rider_profile",
+        )
+        if not request.user.is_staff and not request.user.is_superuser:
+            orders = orders.filter(
+                Q(customer=request.user)
+                | Q(rider=request.user)
+                | Q(store__owner=request.user)
+            )
+        order = get_object_or_404(orders, id=order_id)
+
+        if order.delivery_method != DeliveryMethod.DELIVERY:
+            return Response(
+                {"code": "route_not_applicable", "detail": "This order is not a delivery."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if order.status != OrderStatus.ON_THE_WAY:
+            return Response(
+                {"code": "route_not_active", "detail": "Road routing is only available during delivery."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        rider_profile = getattr(order.rider, "rider_profile", None)
+        if (
+            rider_profile is None
+            or rider_profile.current_latitude is None
+            or rider_profile.current_longitude is None
+        ):
+            return Response(
+                {"code": "rider_location_unavailable", "detail": "The rider has not shared a location yet."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        origin = {
+            "latitude": rider_profile.current_latitude,
+            "longitude": rider_profile.current_longitude,
+        }
+        destination = {
+            "latitude": order.delivery_latitude,
+            "longitude": order.delivery_longitude,
+        }
+        route = route_geojson(origin, destination)
+        geometry = route["route_geometry"]
+        response = Response(
+            {
+                "type": "Feature",
+                "geometry": geometry,
+                "properties": {
+                    "order_id": str(order.id),
+                    "route_status": "AVAILABLE" if geometry else "DEGRADED",
+                    "provider": route["provider"],
+                    "distance_km": route["distance_km"],
+                    "duration_minutes": route["duration_minutes"],
+                    "rider_location_updated_at": rider_profile.last_location_update.isoformat(),
+                    "generated_at": timezone.now().isoformat(),
+                },
+            }
+        )
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 class PrescriptionFileView(APIView):

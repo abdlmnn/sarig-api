@@ -11,6 +11,12 @@ load_dotenv(BASE_DIR / ".env", override=False)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
 DEBUG = os.getenv("DEBUG", "0").lower() in {"1", "true", "yes", "on"}
+RIDER_DISPATCH_ALL_ONLINE = os.getenv("RIDER_DISPATCH_ALL_ONLINE", "0").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
@@ -101,6 +107,10 @@ CELERY_BEAT_SCHEDULE = {
     "auto-cancel-stale-orders-every-5-minutes": {
         "task": "apps.orders.tasks.auto_cancel_stale_orders",
         "schedule": 300.0,
+    },
+    "dispatch-pending-onboarding-notifications-every-minute": {
+        "task": "apps.onboarding.tasks.dispatch_pending_onboarding_notifications",
+        "schedule": 60.0,
     },
 }
 
@@ -287,6 +297,15 @@ ENABLE_FCM_PUSH = os.getenv("ENABLE_FCM_PUSH", "False").lower() in {
     "on",
 }
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
+ONBOARDING_SMS_BACKEND = os.getenv("ONBOARDING_SMS_BACKEND", "")
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "False").lower() in {"1", "true", "yes", "on"}
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@sarig.local")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 PAYMONGO_WEBHOOK_SECRET = os.getenv("PAYMONGO_WEBHOOK_SECRET", "")
 PAYMONGO_SECRET_KEY = os.getenv("PAYMONGO_SECRET_KEY", "")
 PAYMONGO_SUCCESS_URL = os.getenv("PAYMONGO_SUCCESS_URL", "")

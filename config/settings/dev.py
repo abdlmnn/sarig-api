@@ -1,6 +1,12 @@
 from .base import *  # noqa: F403
 
 DEBUG = os.getenv("DEBUG", "1").lower() in {"1", "true", "yes", "on"}  # noqa: F405
+RIDER_DISPATCH_ALL_ONLINE = os.getenv("RIDER_DISPATCH_ALL_ONLINE", "1").lower() in {  # noqa: F405
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")  # noqa: F405
 ALLOWED_HOSTS = [
     host.strip()

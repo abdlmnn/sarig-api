@@ -14,7 +14,7 @@ from rest_framework import viewsets, generics, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.exceptions import APIException
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
@@ -25,6 +25,7 @@ from .auth_sessions import (
     clear_refresh_cookie,
     cookie_name,
     rotate_refresh_token,
+    revoke_user_refresh_tokens,
     set_refresh_cookie,
     validate_refresh_token,
 )
@@ -272,15 +273,5 @@ class LogoutView(APIView):
     throttle_scope = "auth"
 
     def post(self, request):
-        refresh = request.data.get("refresh")
-        if not refresh:
-            raise ValidationError({"refresh": "This field is required."})
-        try:
-            token = RefreshToken(refresh)
-            token.blacklist()
-        except TokenError:
-            return Response(
-                {"detail": "Invalid or expired refresh token."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        revoke_user_refresh_tokens(request.user)
         return Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)

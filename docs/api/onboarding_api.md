@@ -131,7 +131,8 @@ Success response:
   "application_id": "MR-1028",
   "status": "PENDING",
   "message": "Merchant application submitted for review.",
-  "confirmation_email_sent": true
+  "confirmation_email_sent": false,
+  "confirmation_email_queued": true
 }
 ```
 
@@ -219,7 +220,8 @@ Success response:
   "application_id": "RD-2044",
   "status": "PENDING",
   "message": "Rider application submitted for review.",
-  "confirmation_email_sent": true
+  "confirmation_email_sent": false,
+  "confirmation_email_queued": true
 }
 ```
 
@@ -251,7 +253,7 @@ Response:
   "admin_remarks": "Please upload a clearer NBI clearance.",
   "next_action": "Update the requested fields using the secure edit link sent to your email.",
   "can_edit": true,
-  "edit_url": "https://sarig.app/rider/application/edit/secure-token"
+  "edit_url": null
 }
 ```
 
@@ -259,7 +261,7 @@ Response:
 
 When admin requests changes, the frontend should:
 
-1. Use the secure edit link from email or the `edit_url` returned by status check.
+1. Use the secure edit link from email. Public status checks never return bearer credentials.
 2. GET the edit endpoint to load requested fields and application data.
 3. PATCH only the fields listed in `requested_fields`.
 4. Upload changed documents/files again when required.
@@ -293,15 +295,18 @@ Request body:
 
 ```json
 {
-  "username": "sultanfood",
-  "password": "secure-password"
+  "password": "secure-password",
+  "password_confirm": "secure-password"
 }
 ```
 
 Rules:
-- token must already be approved
-- username must be unique
+- the application must be approved and the token must be active
+- `password_confirm` is recommended; it must match when supplied
+- the backend creates an internal username, but merchant and rider login should use email
 - do not send email or phone number; those come from the application
+- the token becomes invalid immediately after successful setup
+- successful setup changes the application status to `ACTIVE`
 
 ## Admin Desk
 
@@ -315,7 +320,7 @@ Query params:
 
 ```text
 type=merchant|rider|all
-status=pending|under_review|request_changes|approved|rejected|all
+status=pending|under_review|request_changes|approved|active|rejected|all
 search=string
 ordering=newest|oldest
 page=1
@@ -450,9 +455,13 @@ Response:
   "application_id": "MR-1028",
   "status": "APPROVED",
   "message": "Application approved.",
-  "setup_token": "uuid-token"
+  "setup_token": null
 }
 ```
+
+The setup credential is sent only through the queued notification workflow. To revoke the old invitation and queue a new one:
+
+`POST /api/v1/onboarding/applications/{application_id}/resend-setup/`
 
 ### Request Changes
 
@@ -474,9 +483,13 @@ Response:
   "application_id": "RD-2044",
   "status": "REQUEST_CHANGES",
   "message": "Change request sent.",
-  "edit_token": "uuid-token"
+  "edit_token": null
 }
 ```
+
+The edit credential is sent only through the queued notification workflow. To revoke the old edit credential and queue a new one:
+
+`POST /api/v1/onboarding/applications/{application_id}/resend-changes/`
 
 ### Reject Application
 

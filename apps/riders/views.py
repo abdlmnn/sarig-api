@@ -1,22 +1,53 @@
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from apps.orders.models import DeliveryMethod, Order, OrderStatus
+from apps.payments.models import PaymentMethod, PaymentStatus, PaymentTransaction
+from apps.users.permissions import IsRider
 from .models import RiderProfile
+from .serializers import (
+    RiderActiveOrderSerializer,
+    RiderLocationUpdateSerializer,
+    RiderProfileSerializer,
+    RiderStatusUpdateSerializer,
+)
+
+
+ACTIVE_DELIVERY_STATUSES = [
+    OrderStatus.PREPARING,
+    OrderStatus.READY,
+    OrderStatus.ON_THE_WAY,
+]
+
+
+def active_order_payload(user):
+    order = (
+        Order.objects.select_related("store", "rider__rider_profile")
+        .filter(
+            rider=user,
+            delivery_method=DeliveryMethod.DELIVERY,
+            status__in=ACTIVE_DELIVERY_STATUSES,
+        )
+        .order_by("created_at", "id")
+        .first()
+    )
+    return RiderActiveOrderSerializer(order).data if order else None
+
 
 class RiderStatusToggleView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsRider]
 
     def post(self, request):
         user = request.user
-        
-        # Security: Only users with 'rider' role can do this
-        if not user.roles.filter(name="Rider").exists():
-            return Response({"error": "Only riders can toggle status."}, status=status.HTTP_403_FORBIDDEN)
-        
-        profile, created = RiderProfile.objects.get_or_create(user=user)
-        profile.is_online = not profile.is_online
-        profile.save()
+        serializer = RiderStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        profile, _ = RiderProfile.objects.get_or_create(user=user)
+        profile.is_online = serializer.validated_data.get("is_online", not profile.is_online)
+        profile.save(update_fields=["is_online"])
 
         return Response({
             "is_online": profile.is_online,
@@ -24,23 +55,25 @@ class RiderStatusToggleView(APIView):
         })
 
 class RiderLocationUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsRider]
 
     def post(self, request):
         user = request.user
-        lat = request.data.get("latitude")
-        lng = request.data.get("longitude")
 
-        if not lat or not lng:
-            return Response({"error": "Latitude and longitude are required."}, status=400)
+        serializer = RiderLocationUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lat = serializer.validated_data["latitude"]
+        lng = serializer.validated_data["longitude"]
 
         profile = get_object_or_404(RiderProfile, user=user)
         profile.current_latitude = lat
         profile.current_longitude = lng
         profile.save()
+        lat = profile.current_latitude
+        lng = profile.current_longitude
+        last_updated_at = profile.last_location_update.isoformat()
 
         # Broadcast to active order tracking group if on a delivery
-        from apps.orders.models import Order, OrderStatus
         active_order = Order.objects.filter(rider=user, status=OrderStatus.ON_THE_WAY).first()
         
         if active_order:
@@ -62,24 +95,43 @@ class RiderLocationUpdateView(APIView):
                     "longitude": str(lng),
                     "remaining_minutes": eta_minutes,
                     "distance_km": road_distance,
+                    "last_updated_at": last_updated_at,
                 }
             )
+        else:
+            from .services import RiderDispatcherService
 
-        return Response({"status": "Location updated"})
+            waiting_order = (
+                Order.objects.filter(
+                    rider__isnull=True,
+                    delivery_method=DeliveryMethod.DELIVERY,
+                    status=OrderStatus.READY,
+                )
+                .order_by("created_at", "id")
+                .first()
+            )
+            if waiting_order:
+                RiderDispatcherService.dispatch_ready_order(waiting_order)
+
+        return Response(
+            {
+                "status": "Location updated",
+                "location": {
+                    "latitude": str(lat),
+                    "longitude": str(lng),
+                    "last_updated_at": last_updated_at,
+                },
+            }
+        )
 
 
 class RiderOrderActionView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsRider]
 
     def post(self, request, order_id):
-        from apps.orders.models import Order, OrderStatus
-        
         action = request.data.get("action")
         order = get_object_or_404(Order, id=order_id)
         user = request.user
-
-        if not user.roles.filter(name="Rider").exists():
-            return Response({"error": "Only riders can manage delivery orders."}, status=status.HTTP_403_FORBIDDEN)
 
         if action == "accept_offer":
             from .services import RiderDispatcherService
@@ -87,7 +139,7 @@ class RiderOrderActionView(APIView):
             if not accepted:
                 return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
             order.broadcast_status_update()
-            return Response({"status": "success", "message": message})
+            return Response({"status": "success", "message": message, "active_order": active_order_payload(user)})
 
         if action == "decline_offer":
             from .services import RiderDispatcherService
@@ -119,7 +171,11 @@ class RiderOrderActionView(APIView):
             from apps.users.notifications import PushNotificationService
             PushNotificationService.notify_order_status(order.customer, "ON_THE_WAY", order.id)
 
-            return Response({"status": "success", "message": "Order picked up. You are now on the way!"})
+            return Response({
+                "status": "success",
+                "message": "Order picked up. You are now on the way!",
+                "active_order": active_order_payload(user),
+            })
 
         elif action == "delivered":
             if order.status != OrderStatus.ON_THE_WAY:
@@ -128,36 +184,44 @@ class RiderOrderActionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            order.status = OrderStatus.DELIVERED
-            order.save()
+            from .services import RiderDispatcherService
+
+            with transaction.atomic():
+                order.status = OrderStatus.DELIVERED
+                order.save(update_fields=["status", "updated_at"])
+                PaymentTransaction.objects.filter(
+                    order=order,
+                    payment_method=PaymentMethod.COD,
+                    status=PaymentStatus.PENDING,
+                ).update(status=PaymentStatus.SUCCESS, updated_at=timezone.now())
+                RiderDispatcherService.record_delivery_earnings(order)
+
+                profile = user.rider_profile
+                profile.is_available = True
+                profile.save(update_fields=["is_available"])
+
             order.broadcast_status_update()
 
             # Notify Customer
             from apps.users.notifications import PushNotificationService
             PushNotificationService.notify_order_status(order.customer, "DELIVERED", order.id)
 
-            # Process Earnings
-            from .services import RiderDispatcherService
-            earnings = RiderDispatcherService.record_delivery_earnings(order)
-
-            # Make rider available again
-            profile = user.rider_profile
-            profile.is_available = True
-            profile.save()
-
-            return Response({"status": "success", "message": "Order delivered! You are now available for new orders."})
+            return Response({
+                "status": "success",
+                "message": "Order delivered! You are now available for new orders.",
+                "active_order": active_order_payload(user),
+            })
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RiderDashboardView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsRider]
 
     def get(self, request):
         user = request.user
         profile = get_object_or_404(RiderProfile, user=user)
-        
-        from .serializers import RiderProfileSerializer
-        serializer = RiderProfileSerializer(profile)
-        
-        return Response(serializer.data)
+        data = RiderProfileSerializer(profile).data
+        data["active_order"] = active_order_payload(user)
+
+        return Response(data)

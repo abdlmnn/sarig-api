@@ -6,7 +6,11 @@ from apps.onboarding.models import ApplicationStatus, MerchantApplication, Rider
 from apps.onboarding.services import ApplicationService
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    CELERY_TASK_ALWAYS_EAGER=True,
+    CELERY_TASK_EAGER_PROPAGATES=True,
+)
 class OnboardingEmailTemplateTests(TestCase):
     def test_approval_email_uses_email_template_app(self):
         EmailTemplate.objects.create(
@@ -35,7 +39,8 @@ class OnboardingEmailTemplateTests(TestCase):
             status=ApplicationStatus.PENDING,
         )
 
-        ApplicationService.approve_merchant(application)
+        with self.captureOnCommitCallbacks(execute=True):
+            ApplicationService.approve_merchant(application)
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].subject, f"Approved {application.application_id}")
@@ -62,13 +67,14 @@ class OnboardingEmailTemplateTests(TestCase):
             status=ApplicationStatus.PENDING,
         )
 
-        ApplicationService.request_changes(
-            application,
-            "Please upload a clearer license.",
-            ["professional_drivers_license"],
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            ApplicationService.request_changes(
+                application,
+                "Please upload a clearer license.",
+                ["professional_drivers_license"],
+            )
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].subject, "Sarig application changes requested")
         self.assertIn("Please upload a clearer license.", mail.outbox[0].body)
-        self.assertIn("professional_drivers_license", mail.outbox[0].body)
+        self.assertNotIn("Requested fields:", mail.outbox[0].body)

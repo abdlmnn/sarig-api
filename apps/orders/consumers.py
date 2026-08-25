@@ -102,7 +102,8 @@ class OrderConsumer(AsyncWebsocketConsumer):
             "latitude": event["latitude"],
             "longitude": event["longitude"],
             "remaining_minutes": event.get("remaining_minutes"),
-            "distance_km": event.get("distance_km")
+            "distance_km": event.get("distance_km"),
+            "last_updated_at": event.get("last_updated_at"),
         }))
 
 

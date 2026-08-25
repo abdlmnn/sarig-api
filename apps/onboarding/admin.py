@@ -5,6 +5,7 @@ from .models import (
     ApplicationEditToken,
     ApplicationStatusHistory,
     MerchantApplication,
+    OnboardingNotificationDelivery,
     RiderApplication,
 )
 from .services import ApplicationService
@@ -15,7 +16,7 @@ class MerchantApplicationAdmin(admin.ModelAdmin):
     list_display = ("application_id", "business_name", "business_type", "city", "status", "created_at")
     list_filter = ("status", "business_type", "delivery_time", "city", "created_at")
     search_fields = ("application_id", "business_name", "branch_name", "company_email", "contact_number")
-    readonly_fields = ("id", "application_id", "applicant", "created_at", "updated_at")
+    readonly_fields = ("id", "application_id", "applicant", "status", "created_at", "updated_at")
     actions = ["approve_selected", "reject_selected"]
 
     def approve_selected(self, request, queryset):
@@ -38,7 +39,7 @@ class RiderApplicationAdmin(admin.ModelAdmin):
     list_display = ("application_id", "applicant_name", "vehicle_type", "plate_number", "status", "created_at")
     list_filter = ("status", "vehicle_type", "city", "created_at")
     search_fields = ("application_id", "first_name", "last_name", "email", "phone_number", "plate_number")
-    readonly_fields = ("id", "application_id", "applicant", "created_at", "updated_at")
+    readonly_fields = ("id", "application_id", "applicant", "status", "created_at", "updated_at")
     actions = ["approve_selected", "reject_selected"]
 
     def approve_selected(self, request, queryset):
@@ -71,5 +72,29 @@ class ApplicationEditTokenAdmin(admin.ModelAdmin):
 
 @admin.register(AccountSetupToken)
 class AccountSetupTokenAdmin(admin.ModelAdmin):
-    list_display = ("application_id", "application_type", "expires_at", "used_at", "created_at")
-    readonly_fields = ("id", "token", "created_at")
+    list_display = ("application_id", "application_type", "expires_at", "used_at", "revoked_at", "created_at")
+    readonly_fields = ("id", "created_at")
+    exclude = ("token",)
+
+
+@admin.register(OnboardingNotificationDelivery)
+class OnboardingNotificationDeliveryAdmin(admin.ModelAdmin):
+    list_display = ("application_id", "event", "channel", "status", "attempt_count", "sent_at", "created_at")
+    list_filter = ("event", "channel", "status")
+    search_fields = ("application_id", "recipient", "idempotency_key")
+    readonly_fields = (
+        "id",
+        "event",
+        "channel",
+        "application_id",
+        "application_type",
+        "recipient",
+        "template_key",
+        "payload",
+        "idempotency_key",
+        "attempt_count",
+        "last_error",
+        "sent_at",
+        "created_at",
+        "updated_at",
+    )

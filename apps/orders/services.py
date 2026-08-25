@@ -376,7 +376,11 @@ def merchant_order_summary(order, now=None):
 
 
 def order_tracking_payload(order):
-    rider_profile = getattr(order.rider, "rider_profile", None)
+    rider_profile = (
+        getattr(order.rider, "rider_profile", None)
+        if order.status == OrderStatus.ON_THE_WAY
+        else None
+    )
     rider_latitude = getattr(rider_profile, "current_latitude", None)
     rider_longitude = getattr(rider_profile, "current_longitude", None)
     rider_updated_at = getattr(rider_profile, "last_location_update", None)

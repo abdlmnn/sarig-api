@@ -4,6 +4,8 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from apps.locations.services import route_geojson
+
 
 @override_settings(
     GEOAPIFY_API_KEY="geo-key",
@@ -126,6 +128,49 @@ class LocationApiTests(TestCase):
         self.assertEqual(res.data["distance_km"], Decimal("2.40"))
         self.assertEqual(res.data["duration_minutes"], 8)
         self.assertEqual(res.data["provider"], "openrouteservice")
+
+    @patch("apps.locations.services.requests.post")
+    def test_route_geojson_returns_valid_road_geometry(self, mock_post):
+        mock_post.return_value.json.return_value = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[124.290000, 8.010000], [124.283900, 8.003400]],
+                    },
+                    "properties": {"summary": {"distance": 2400, "duration": 480}},
+                }
+            ],
+        }
+        mock_post.return_value.raise_for_status.return_value = None
+
+        result = route_geojson(
+            {"latitude": "8.010000", "longitude": "124.290000"},
+            {"latitude": "8.003400", "longitude": "124.283900"},
+        )
+
+        self.assertEqual(result["provider"], "openrouteservice")
+        self.assertEqual(result["route_geometry"]["type"], "LineString")
+        self.assertEqual(
+            mock_post.call_args.kwargs["json"]["coordinates"],
+            [[124.29, 8.01], [124.2839, 8.0034]],
+        )
+        self.assertTrue(mock_post.call_args.args[0].endswith("/geojson"))
+
+    @patch("apps.locations.services.requests.post")
+    def test_route_geojson_falls_back_without_valid_geometry(self, mock_post):
+        mock_post.return_value.json.return_value = {"type": "FeatureCollection", "features": []}
+        mock_post.return_value.raise_for_status.return_value = None
+
+        result = route_geojson(
+            {"latitude": "8.010000", "longitude": "124.290000"},
+            {"latitude": "8.003400", "longitude": "124.283900"},
+        )
+
+        self.assertEqual(result["provider"], "haversine_fallback")
+        self.assertIsNone(result["route_geometry"])
 
     @patch("apps.locations.services.requests.post")
     def test_delivery_fee_estimate_uses_route_distance(self, mock_post):

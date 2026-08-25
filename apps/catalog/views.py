@@ -201,7 +201,7 @@ def get_or_create_merchant_store(user):
     application = (
         MerchantApplication.objects.filter(
             applicant=user,
-            status=ApplicationStatus.APPROVED,
+            status__in=[ApplicationStatus.APPROVED, ApplicationStatus.ACTIVE],
         )
         .order_by("-updated_at")
         .first()
