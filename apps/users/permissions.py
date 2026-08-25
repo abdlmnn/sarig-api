@@ -30,8 +30,14 @@ class IsMerchant(HasRole):
     role_name = "Merchant"
 
 
-class IsRider(HasRole):
-    role_name = "Rider"
+class IsRider(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user.is_authenticated
+            and user.is_rider
+            and not user.is_superuser
+        )
 
 
 class IsOwnerOrReadOnly(BasePermission):

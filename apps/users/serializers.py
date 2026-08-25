@@ -198,7 +198,11 @@ class LegacyTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):
         token = RefreshToken(attrs["refresh"])
         user = User.objects.filter(id=token.get("user_id")).first()
-        if user and (user.is_superuser or user.is_merchant):
+        account_type = token.get("account_type")
+        if account_type == "RIDER":
+            if not user or not user.is_rider or user.is_superuser:
+                raise InvalidToken("This rider session is no longer allowed.")
+        elif user and (user.is_superuser or user.is_merchant):
             raise InvalidToken(
                 "Use the role-specific secure authentication endpoint."
             )
