@@ -11,6 +11,12 @@ load_dotenv(BASE_DIR / ".env", override=False)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
 DEBUG = os.getenv("DEBUG", "0").lower() in {"1", "true", "yes", "on"}
+RIDER_DISPATCH_ALL_ONLINE = os.getenv("RIDER_DISPATCH_ALL_ONLINE", "0").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")

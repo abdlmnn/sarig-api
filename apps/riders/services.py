@@ -1,7 +1,9 @@
 import logging
 from decimal import Decimal
 from datetime import timedelta
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from .models import RiderOrderOffer, RiderOrderOfferStatus, RiderProfile
 from apps.users.geo import get_lat_lng, haversine_km
@@ -11,6 +13,7 @@ logger = logging.getLogger(__name__)
 class RiderDispatcherService:
     OFFER_TTL_SECONDS = 90
     PREDISPATCH_PREP_THRESHOLD_MINUTES = 10
+    LOCATION_FRESHNESS_SECONDS = 120
 
     haversine = staticmethod(haversine_km)
 
@@ -26,7 +29,9 @@ class RiderDispatcherService:
             is_available=True,
             current_latitude__isnull=False,
             current_longitude__isnull=False,
-            can_do_delivery=True
+            can_do_delivery=True,
+            last_location_update__gte=timezone.now()
+            - timedelta(seconds=cls.LOCATION_FRESHNESS_SECONDS),
         )
 
         best_rider = None
@@ -70,10 +75,14 @@ class RiderDispatcherService:
             return None
         if order.rider_id:
             return None
+        cls.expire_stale_offers()
         if cls.active_offer_for_order(order).exists():
             return cls.active_offer_for_order(order).first()
 
-        cls.expire_stale_offers()
+        if settings.RIDER_DISPATCH_ALL_ONLINE:
+            offers = cls.offer_order_to_online_riders(order)
+            return offers[0] if offers else None
+
         rider_profile, distance = cls.find_best_rider_for_order(order)
         if not rider_profile:
             logger.warning("No rider available to offer order %s", order.id)
@@ -96,53 +105,116 @@ class RiderDispatcherService:
         return offer
 
     @classmethod
+    def offer_order_to_online_riders(cls, order):
+        """Creates temporary test offers for every eligible online rider."""
+        store_lat, store_lng = get_lat_lng(order.store, "latitude", "longitude")
+        expires_at = timezone.now() + timedelta(seconds=cls.OFFER_TTL_SECONDS)
+        offers = []
+        riders = RiderProfile.objects.filter(
+            is_online=True,
+            is_available=True,
+            can_do_delivery=True,
+        ).exclude(
+            order_offers__status=RiderOrderOfferStatus.OFFERED,
+        ).select_related("user")
+
+        for rider in riders:
+            distance = None
+            if rider.current_latitude is not None and rider.current_longitude is not None:
+                distance = cls.haversine(
+                    float(store_lng),
+                    float(store_lat),
+                    float(rider.current_longitude),
+                    float(rider.current_latitude),
+                )
+            offer = RiderOrderOffer.objects.create(
+                order=order,
+                rider=rider,
+                distance_km=Decimal(str(round(distance, 2))) if distance is not None else None,
+                expires_at=expires_at,
+            )
+            cls.notify_rider_delivery_offer(offer)
+            offers.append(offer)
+
+        if not offers:
+            logger.warning("No online riders available to offer order %s", order.id)
+        return offers
+
+    @classmethod
     def accept_order_offer(cls, order, rider_user):
         """
         Assigns the order only after the offered rider accepts it.
         """
-        from apps.orders.models import DeliveryMethod, OrderStatus
-
-        if order.delivery_method != DeliveryMethod.DELIVERY:
-            return False, "Pickup orders do not need a rider."
-        if order.status not in [OrderStatus.PREPARING, OrderStatus.READY]:
-            return False, "This order is not ready for rider assignment."
-        if order.rider_id:
-            if order.rider_id == rider_user.id:
-                return True, "You are already assigned to this order."
-            return False, "This order is already assigned to another rider."
-
-        try:
-            rider_profile = rider_user.rider_profile
-        except RiderProfile.DoesNotExist:
-            return False, "Rider profile was not found."
-
-        cls.expire_stale_offers()
-        offer = cls.active_offer_for_order(order).filter(rider=rider_profile).first()
-        if not offer:
-            return False, "No active delivery offer was found for this rider."
-        if offer.is_expired():
-            offer.status = RiderOrderOfferStatus.EXPIRED
-            offer.responded_at = timezone.now()
-            offer.save(update_fields=["status", "responded_at"])
-            return False, "This delivery offer has expired."
-        if not rider_profile.is_online or not rider_profile.is_available:
-            return False, "You must be online and available to accept this delivery."
+        from apps.orders.models import DeliveryMethod, Order, OrderStatus
 
         with transaction.atomic():
-            order.rider = rider_user
-            order.save(update_fields=["rider", "updated_at"])
+            try:
+                rider_profile = RiderProfile.objects.select_for_update().get(user=rider_user)
+            except RiderProfile.DoesNotExist:
+                return False, "Rider profile was not found."
+
+            locked_order = Order.objects.select_for_update().get(id=order.id)
+            if locked_order.delivery_method != DeliveryMethod.DELIVERY:
+                return False, "Pickup orders do not need a rider."
+            if locked_order.status not in [OrderStatus.PREPARING, OrderStatus.READY]:
+                return False, "This order is not ready for rider assignment."
+            if locked_order.rider_id:
+                if locked_order.rider_id == rider_user.id:
+                    return True, "You are already assigned to this order."
+                return False, "This order is already assigned to another rider."
+            if not rider_profile.is_online or not rider_profile.is_available:
+                return False, "You must be online and available to accept this delivery."
+            if (
+                Order.objects.filter(
+                    rider=rider_user,
+                    delivery_method=DeliveryMethod.DELIVERY,
+                    status__in=[
+                        OrderStatus.PREPARING,
+                        OrderStatus.READY,
+                        OrderStatus.ON_THE_WAY,
+                    ],
+                )
+                .exclude(id=locked_order.id)
+                .exists()
+            ):
+                return False, "You already have an active delivery."
+
+            offer = (
+                RiderOrderOffer.objects.select_for_update()
+                .filter(
+                    order=locked_order,
+                    rider=rider_profile,
+                    status=RiderOrderOfferStatus.OFFERED,
+                )
+                .first()
+            )
+            if not offer:
+                return False, "No active delivery offer was found for this rider."
+
+            now = timezone.now()
+            if offer.expires_at <= now:
+                offer.status = RiderOrderOfferStatus.EXPIRED
+                offer.responded_at = now
+                offer.save(update_fields=["status", "responded_at"])
+                return False, "This delivery offer has expired."
+
+            locked_order.rider = rider_user
+            locked_order.save(update_fields=["rider", "updated_at"])
             offer.status = RiderOrderOfferStatus.ACCEPTED
-            offer.accepted_at = timezone.now()
+            offer.accepted_at = now
             offer.responded_at = offer.accepted_at
             offer.save(update_fields=["status", "accepted_at", "responded_at"])
-            RiderOrderOffer.objects.filter(order=order, status=RiderOrderOfferStatus.OFFERED).exclude(
-                id=offer.id
-            ).update(status=RiderOrderOfferStatus.CANCELLED, responded_at=timezone.now())
+            (
+                RiderOrderOffer.objects.filter(status=RiderOrderOfferStatus.OFFERED)
+                .filter(Q(order=locked_order) | Q(rider=rider_profile))
+                .exclude(id=offer.id)
+                .update(status=RiderOrderOfferStatus.CANCELLED, responded_at=now)
+            )
             rider_profile.is_available = False
             rider_profile.save(update_fields=["is_available"])
 
-        cls.notify_rider_pickup_ready(order)
-        logger.info("Rider %s accepted order %s", rider_user.username, order.id)
+        cls.notify_rider_pickup_ready(locked_order)
+        logger.info("Rider %s accepted order %s", rider_user.username, locked_order.id)
         return True, "Delivery accepted."
 
     @classmethod
@@ -235,7 +307,10 @@ class RiderDispatcherService:
         if order.delivery_method != DeliveryMethod.DELIVERY or order.status != OrderStatus.PREPARING:
             return None
         prep_minutes = cls.estimate_order_prep_minutes(order)
-        if prep_minutes > cls.PREDISPATCH_PREP_THRESHOLD_MINUTES:
+        if (
+            prep_minutes > cls.PREDISPATCH_PREP_THRESHOLD_MINUTES
+            and not settings.RIDER_DISPATCH_ALL_ONLINE
+        ):
             return None
         return cls.offer_order_to_best_rider(order)
 
